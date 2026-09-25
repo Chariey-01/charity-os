@@ -1,0 +1,16 @@
+@import "tailwindcss";
+
+@theme {
+  --color-charity-950: #0f172a;
+  --color-charity-600: #0d9488;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: #f8fafc;
+  color: #0f172a;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
