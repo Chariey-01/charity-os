@@ -1,37 +1,53 @@
-import { useEffect, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 
-type Health = { status: string; database: string };
+type User = { id: string; email: string; display_name: string; timezone: string };
+type Session = { id: string; title: string; status: "active" | "paused"; started_at: string; version: number };
+type Task = { id: string; title: string; status: string; is_deep_work_default: boolean };
+type Area = { id: string; name: string; color: string };
+type Metrics = { total_focused_minutes: number; deep_work_minutes: number; planned_completion_rate: number };
+type View = "home" | "roadmap" | "add" | "insights" | "profile" | "reflect";
 
-export function App() {
-  const [health, setHealth] = useState<"checking" | "ready" | "unavailable">("checking");
+function cookie(name: string) { return document.cookie.split("; ").find((row) => row.startsWith(`${name}=`))?.split("=")[1] ?? ""; }
+async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`/api/v1${path}`, { credentials: "same-origin", ...init, headers: { "Content-Type": "application/json", "X-CSRFToken": decodeURIComponent(cookie("csrftoken")), ...init?.headers } });
+  if (!response.ok) throw new Error((await response.json().catch(() => null))?.error?.message ?? "Request failed");
+  return response.status === 204 ? (undefined as T) : response.json();
+}
+// Shared export keeps timestamp reconstruction independently testable.
+// eslint-disable-next-line react-refresh/only-export-components
+export function elapsedSeconds(startedAt: string, now = Date.now()) { return Math.max(0, Math.floor((now - new Date(startedAt).getTime()) / 1000)); }
+function clock(seconds: number) { return `${String(Math.floor(seconds / 3600)).padStart(2, "0")}:${String(Math.floor((seconds % 3600) / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`; }
 
-  useEffect(() => {
-    const controller = new AbortController();
-    fetch("/api/v1/health", { signal: controller.signal, credentials: "same-origin" })
-      .then((response) => {
-        if (!response.ok) throw new Error("Health check failed");
-        return response.json() as Promise<Health>;
-      })
-      .then((body) => setHealth(body.status === "ok" ? "ready" : "unavailable"))
-      .catch((error: unknown) => {
-        if (!(error instanceof DOMException && error.name === "AbortError")) {
-          setHealth("unavailable");
-        }
-      });
-    return () => controller.abort();
-  }, []);
-
-  return (
-    <main className="mx-auto flex min-h-screen max-w-3xl items-center px-6 py-16">
-      <section className="w-full rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-        <p className="text-sm font-semibold uppercase tracking-widest text-charity-600">Foundation</p>
-        <h1 className="mt-3 text-4xl font-bold tracking-tight text-charity-950">CharityOS</h1>
-        <p className="mt-4 text-slate-600">The application shell is running.</p>
-        <p className="mt-6 text-sm text-slate-500" role="status">
-          Backend: {health}
-        </p>
-      </section>
-    </main>
-  );
+function Login({ onLogin }: { onLogin: (user: User) => void }) {
+  const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
+  async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setBusy(true); setError(""); const form = new FormData(event.currentTarget); try { await api("/auth/csrf"); onLogin(await api<User>("/auth/login", { method: "POST", body: JSON.stringify({ email: form.get("email"), password: form.get("password") }) })); } catch (err) { setError(err instanceof Error ? err.message : "Unable to sign in"); } finally { setBusy(false); } }
+  return <main className="auth"><section className="auth-card"><div className="brand-mark">C</div><p className="eyebrow">PRIVATE ALPHA</p><h1>Build the days that<br/>build your life.</h1><p className="muted">One calm place for focused work, learning, and wellbeing.</p><form onSubmit={submit}><label>Email<input name="email" type="email" required autoComplete="email"/></label><label>Password<input name="password" type="password" required autoComplete="current-password"/></label>{error && <p className="error" role="alert">{error}</p>}<button className="primary" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button></form></section></main>;
 }
 
+function Timer({ session, refresh }: { session: Session; refresh: () => void }) {
+  const [now, setNow] = useState(Date.now()); const [busy, setBusy] = useState(false);
+  useEffect(() => { const id = window.setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(id); }, []);
+  async function command(name: "pause" | "resume" | "finish") { setBusy(true); try { await api(`/sessions/${session.id}/${name}`, { method: "POST", body: JSON.stringify(name === "pause" ? { id: crypto.randomUUID(), expected_version: session.version } : { expected_version: session.version }) }); refresh(); } finally { setBusy(false); } }
+  return <section className="timer-card"><div><span className="live-dot"/> {session.status === "paused" ? "Paused" : "Focus in progress"}</div><h2>{session.title}</h2><strong data-testid="elapsed-timer">{clock(elapsedSeconds(session.started_at, now))}</strong><div className="timer-actions"><button disabled={busy} onClick={() => command(session.status === "paused" ? "resume" : "pause")}>{session.status === "paused" ? "Resume" : "Pause"}</button><button className="finish" disabled={busy} onClick={() => command("finish")}>Finish</button></div></section>;
+}
+
+function Dashboard({ session, tasks, areas, metrics, refresh, go }: { session: Session | null; tasks: Task[]; areas: Area[]; metrics: Metrics; refresh: () => void; go: (v: View) => void }) {
+  const date = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" }).format(new Date());
+  return <><header><p className="eyebrow">DAY 3 · 93 DAYS REMAINING</p><h1>Good day.</h1><p className="muted">{date}</p></header>{session && <Timer session={session} refresh={refresh}/>}<div className="metric-grid"><article><span>Today’s focus</span><strong>{metrics.total_focused_minutes}<small> min</small></strong></article><article><span>Deep work</span><strong>{metrics.deep_work_minutes}<small> min</small></strong></article></div><section className="panel"><div className="section-title"><div><p className="eyebrow">TODAY</p><h2>Primary outcomes</h2></div><button className="text-button" onClick={() => go("add")}>Plan day</button></div>{tasks.length ? tasks.slice(0,3).map((task, index) => <div className="task" key={task.id}><span className="task-number">0{index+1}</span><div><b>{task.title}</b><small>{task.is_deep_work_default ? "Deep work" : "Task"}</small></div><span className={`status ${task.status}`}>{task.status}</span></div>) : <div className="empty">Your day is open. Add the one outcome that matters most.</div>}</section><section className="panel"><div className="section-title"><h2>Life areas</h2><small>{areas.length} active</small></div><div className="areas">{areas.slice(0,5).map((area) => <span key={area.id}><i style={{background: area.color}}/>{area.name}</span>)}</div></section><button className="close-day" onClick={() => go("reflect")}>Close my day <span>→</span></button></>;
+}
+
+function QuickAdd({ areas, refresh }: { areas: Area[]; refresh: () => void }) {
+  const [mode, setMode] = useState<"task"|"focus"|"win">("task"); const [message, setMessage] = useState("");
+  async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); setMessage(""); if (mode === "task") await api("/tasks", {method:"POST", body:JSON.stringify({title:data.get("title"), area:data.get("area")||null, status:"planned", is_deep_work_default:data.get("deep")==="on"})}); if (mode === "focus") await api("/sessions/start", {method:"POST", body:JSON.stringify({id:crypto.randomUUID(), title:data.get("title"), area:data.get("area"), is_deep_work:data.get("deep")==="on"})}); if (mode === "win") await api("/accomplishments", {method:"POST", body:JSON.stringify({title:data.get("title"), local_date:new Date().toISOString().slice(0,10), timezone_name:Intl.DateTimeFormat().resolvedOptions().timeZone})}); setMessage("Saved"); event.currentTarget.reset(); refresh(); }
+  return <section><header><p className="eyebrow">QUICK ADD</p><h1>Capture momentum.</h1></header><div className="segmented">{(["task","focus","win"] as const).map(x=><button type="button" key={x} className={mode===x?"selected":""} onClick={()=>setMode(x)}>{x === "win" ? "Win" : x[0].toUpperCase()+x.slice(1)}</button>)}</div><form className="panel form" onSubmit={submit}><label>What are you working on?<input name="title" required placeholder="Name the outcome"/></label>{mode!=="win"&&<label>Area<select name="area" required><option value="">Select an area</option>{areas.map(a=><option value={a.id} key={a.id}>{a.name}</option>)}</select></label>}{mode!=="win"&&<label className="check"><input type="checkbox" name="deep"/> This is deep work</label>}<button className="primary">{mode==="focus"?"Start focus":"Save"}</button>{message&&<p className="success" role="status">{message}</p>}</form></section>;
+}
+
+function SimpleView({ view, metrics }: { view: View; metrics: Metrics }) { const copy: Record<string,[string,string]> = {roadmap:["Roadmap","Shape a path, then take the next clear step."],insights:["Insights","Progress without the productivity theatre."],profile:["Profile","Your preferences and private workspace."],reflect:["Close your day","Notice what worked. Learn. Begin again."]}; const [title, subtitle]=copy[view]; return <><header><p className="eyebrow">{view.toUpperCase()}</p><h1>{title}</h1><p className="muted">{subtitle}</p></header><section className="panel feature-panel">{view==="insights"?<><div className="big-stat">{metrics.total_focused_minutes}<small> focused minutes</small></div><div className="progress"><i style={{width:`${Math.round(metrics.planned_completion_rate*100)}%`}}/></div><p>{Math.round(metrics.planned_completion_rate*100)}% of planned appearances completed</p></>:<><div className="illustration">✦</div><h2>Ready for your next entry</h2><p className="muted">Use the add button below to keep your progress moving.</p></>}</section></>; }
+
+export function App() {
+  const [user,setUser]=useState<User|null|undefined>(undefined), [session,setSession]=useState<Session|null>(null), [tasks,setTasks]=useState<Task[]>([]), [areas,setAreas]=useState<Area[]>([]), [metrics,setMetrics]=useState<Metrics>({total_focused_minutes:0,deep_work_minutes:0,planned_completion_rate:0}), [view,setView]=useState<View>("home");
+  async function load() { try { const me=await api<User>("/me"); setUser(me); const [active, taskList, areaList, numbers]=await Promise.all([api<Session|null>("/sessions/active"),api<Task[]>("/tasks"),api<Area[]>("/areas"),api<Metrics>("/analytics/metrics")]); setSession(active); setTasks(taskList); setAreas(areaList); setMetrics(numbers); } catch { setUser(null); } }
+  useEffect(()=>{load();},[]); if(user===undefined) return <main className="loading" role="status">Loading CharityOS…</main>; if(!user) return <Login onLogin={(u)=>{setUser(u);load();}}/>;
+  const content=view==="home"?<Dashboard session={session} tasks={tasks} areas={areas} metrics={metrics} refresh={load} go={setView}/>:view==="add"?<QuickAdd areas={areas} refresh={load}/>:<SimpleView view={view} metrics={metrics}/>;
+  return <div className="app-shell"><main className="content">{content}</main><nav aria-label="Primary"><button className={view==="home"?"active":""} onClick={()=>setView("home")}><span>⌂</span>Home</button><button className={view==="roadmap"?"active":""} onClick={()=>setView("roadmap")}><span>◇</span>Roadmap</button><button className="add" aria-label="Quick add" onClick={()=>setView("add")}>+</button><button className={view==="insights"?"active":""} onClick={()=>setView("insights")}><span>↗</span>Insights</button><button className={view==="profile"?"active":""} onClick={()=>setView("profile")}><span>○</span>Profile</button></nav></div>;
+}
