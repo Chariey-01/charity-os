@@ -35,6 +35,14 @@ Create the first local account without storing a password in source control:
 
 The command prompts securely, then creates a 96-day primary challenge and default Area data.
 
+After the account exists, seed the personal development tracks from the roadmap polish pass:
+
+```bash
+(cd backend && ../.venv/bin/python manage.py seed_personal_roadmaps --email you@example.com)
+```
+
+This creates 13 roadmap containers with nested sections/items and skips any roadmap title that already exists. It never overwrites existing descriptions, progress, tasks, evidence, or nodes. Open the Roadmap tab to read each track's purpose, outcome, working instructions, evidence standard, completion definition, next actions, resources, linked tasks, focus time, and progress.
+
 ## Development and validation
 
 ```bash

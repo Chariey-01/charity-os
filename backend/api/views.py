@@ -34,6 +34,7 @@ from roadmaps.models import (
     RoadmapNodePrerequisite,
     RoadmapResource,
 )
+from roadmaps.services import next_actions, roadmap_tree
 
 from . import serializers as s
 
@@ -126,6 +127,23 @@ class RoadmapViewSet(RoadmapViewSet):
     @action(detail=True, methods=["get"])
     def progress(self, request, pk=None):
         return Response(self.get_object().progress())
+
+    @action(detail=True, methods=["get"])
+    def tree(self, request, pk=None):
+        return Response(
+            {
+                "roadmap": self.get_serializer(self.get_object()).data,
+                "nodes": roadmap_tree(self.get_object()),
+            }
+        )
+
+    @action(detail=False, methods=["get"], url_path="next-actions")
+    def next_actions(self, request):
+        return Response(
+            next_actions(
+                request.user, limit=min(int(request.query_params.get("limit", 5)), 20)
+            )
+        )
 
 
 RoadmapNodeViewSet = owned_viewset(
