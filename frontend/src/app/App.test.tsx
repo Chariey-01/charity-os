@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
 import { App, elapsedSeconds } from "./App";
 
@@ -41,4 +41,26 @@ test("shows login when the session is unauthenticated", async () => {
   vi.spyOn(globalThis,"fetch").mockResolvedValue(json({detail:"Authentication credentials were not provided."},403));
   render(<App/>);
   expect(await screen.findByRole("button",{name:"Sign in"})).toBeInTheDocument();
+});
+
+test("renders roadmap guidance, progress, and next action detail", async () => {
+  const roadmap = { id: "r1", title: "TypeScript", description: "PURPOSE\nBuild typed apps\n\nOUTCOME\nExplain a React app", status: "active" };
+  const item = { id: "n1", title: "Union types", description: "Next action: practise and explain.", node_type: "item", state: "planned", time_invested_seconds: 1200, linked_task_ids: [], resources: [], evidence_count: 1, prerequisite_ids: [], children: [] };
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+    const path = String(input);
+    if (path.endsWith("/me")) return json({ id:"1", email:"x@y.com", display_name:"", timezone:"UTC" });
+    if (path.endsWith("/sessions/active")) return json(null);
+    if (path.endsWith("/tasks") || path.endsWith("/areas")) return json([]);
+    if (path.endsWith("/analytics/metrics")) return json({ total_focused_minutes:0, deep_work_minutes:0, planned_completion_rate:0 });
+    if (path.endsWith("/roadmaps")) return json([roadmap]);
+    if (path.endsWith("/roadmaps/next-actions")) return json([{ roadmap_id:"r1", roadmap_title:"TypeScript", node_id:"n1", title:"Union types", description:"", reason:"prerequisite-ready item" }]);
+    if (path.endsWith("/roadmaps/r1/tree")) return json({ roadmap, nodes: [item] });
+    if (path.endsWith("/roadmaps/r1/progress")) return json({ progress_ratio:0 });
+    return json({});
+  });
+  render(<App/>);
+  fireEvent.click(await screen.findByRole("button", { name: /Roadmap/ }));
+  expect(await screen.findByRole("heading", { name: "Your paths." })).toBeInTheDocument();
+  expect((await screen.findAllByText("Union types")).length).toBe(2);
+  expect((screen.getAllByText("Build typed apps")).length).toBe(2);
 });
