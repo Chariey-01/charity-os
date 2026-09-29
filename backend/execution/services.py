@@ -2,7 +2,7 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from .models import FocusSession, SessionPause
+from .models import FocusSession, FocusSessionCorrection, SessionPause
 
 
 def _ancestry(node):
@@ -120,5 +120,49 @@ def end_session(
             "version",
             "updated_at",
         )
+    )
+    return session
+
+
+@transaction.atomic
+def correct_session(
+    *, user, session_id, reason, started_at=None, ended_at=None, expected_version=None
+):
+    session = _locked(user, session_id)
+    _version(session, expected_version)
+    if session.status not in (
+        FocusSession.Status.COMPLETED,
+        FocusSession.Status.CANCELLED,
+    ):
+        raise ValidationError("Only a terminal session can be corrected.")
+    if not reason.strip():
+        raise ValidationError("A correction reason is required.")
+    before = {
+        "started_at": session.started_at.isoformat(),
+        "ended_at": session.ended_at.isoformat(),
+        "duration_seconds": session.duration_seconds,
+    }
+    session.started_at = started_at or session.started_at
+    session.ended_at = ended_at or session.ended_at
+    if session.ended_at <= session.started_at:
+        raise ValidationError("The corrected end must follow the start.")
+    session.duration_seconds = session.elapsed_seconds(at=session.ended_at)
+    session.version += 1
+    after = {
+        "started_at": session.started_at.isoformat(),
+        "ended_at": session.ended_at.isoformat(),
+        "duration_seconds": session.duration_seconds,
+    }
+    session.save(
+        update_fields=(
+            "started_at",
+            "ended_at",
+            "duration_seconds",
+            "version",
+            "updated_at",
+        )
+    )
+    FocusSessionCorrection.objects.create(
+        user=user, session=session, reason=reason.strip(), before=before, after=after
     )
     return session

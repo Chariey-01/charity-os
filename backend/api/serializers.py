@@ -1,3 +1,7 @@
+from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
+
+from django.conf import settings
 from rest_framework import serializers
 
 from challenges.models import Challenge
@@ -69,9 +73,56 @@ FocusSessionSerializer = serializer_for(
         "roadmap_ancestry_snapshot",
     ),
 )
-EvidenceSerializer = serializer_for(Evidence)
+
+
+class EvidenceSerializer(OwnedModelSerializer):
+    class Meta:
+        model = Evidence
+        fields = "__all__"
+        read_only_fields = ("user",)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        kind, url, note = attrs.get("kind"), attrs.get("url", ""), attrs.get("text", "")
+        if kind == "note" and not note.strip():
+            raise serializers.ValidationError({"text": "A note requires text."})
+        if kind in ("url", "github"):
+            parsed = urlparse(url)
+            local = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+            if parsed.scheme != "https" and not (local and settings.DEBUG):
+                raise serializers.ValidationError(
+                    {"url": "Evidence URLs must use HTTPS."}
+                )
+            if kind == "github" and parsed.hostname not in (
+                "github.com",
+                "www.github.com",
+            ):
+                raise serializers.ValidationError(
+                    {"url": "A GitHub URL must use github.com."}
+                )
+        return attrs
+
+
 AccomplishmentSerializer = serializer_for(Accomplishment)
-SleepLogSerializer = serializer_for(SleepLog)
+
+
+class SleepLogSerializer(OwnedModelSerializer):
+    wake_local_date = serializers.DateField(read_only=True)
+
+    class Meta:
+        model = SleepLog
+        fields = "__all__"
+        read_only_fields = ("user", "wake_local_date")
+
+    def create(self, validated_data):
+        validated_data["wake_local_date"] = (
+            validated_data["woke_at"]
+            .astimezone(ZoneInfo(validated_data["timezone_name"]))
+            .date()
+        )
+        return super().create(validated_data)
+
+
 ExerciseLogSerializer = serializer_for(ExerciseLog)
 MealLogSerializer = serializer_for(MealLog)
 WaterSerializer = serializer_for(DailyWaterTotal)

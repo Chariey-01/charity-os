@@ -10,7 +10,13 @@ from rest_framework.response import Response
 
 from challenges.models import Challenge
 from execution.models import FocusSession
-from execution.services import end_session, pause_session, resume_session, start_session
+from execution.services import (
+    correct_session,
+    end_session,
+    pause_session,
+    resume_session,
+    start_session,
+)
 from health.models import (
     DailyNutritionRating,
     DailyWaterTotal,
@@ -114,6 +120,14 @@ CapacityViewSet = owned_viewset(
 )
 DailyPlanViewSet = owned_viewset("DailyPlanViewSet", DailyPlan, s.DailyPlanSerializer)
 RoadmapViewSet = owned_viewset("RoadmapViewSet", Roadmap, s.RoadmapSerializer)
+
+
+class RoadmapViewSet(RoadmapViewSet):
+    @action(detail=True, methods=["get"])
+    def progress(self, request, pk=None):
+        return Response(self.get_object().progress())
+
+
 RoadmapNodeViewSet = owned_viewset(
     "RoadmapNodeViewSet", RoadmapNode, s.RoadmapNodeSerializer
 )
@@ -278,6 +292,25 @@ class SessionViewSet(OwnedViewSet):
             user=request.user,
             session_id=pk,
             target="cancelled",
+            expected_version=request.data.get("expected_version"),
+        )
+        return Response(self.get_serializer(obj).data)
+
+    @action(detail=True, methods=["post"])
+    def corrections(self, request, pk=None):
+        from rest_framework.fields import DateTimeField
+
+        field = DateTimeField()
+        obj = correct_session(
+            user=request.user,
+            session_id=pk,
+            reason=request.data.get("reason", ""),
+            started_at=field.to_internal_value(request.data["started_at"])
+            if request.data.get("started_at")
+            else None,
+            ended_at=field.to_internal_value(request.data["ended_at"])
+            if request.data.get("ended_at")
+            else None,
             expected_version=request.data.get("expected_version"),
         )
         return Response(self.get_serializer(obj).data)
