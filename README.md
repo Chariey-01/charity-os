@@ -1,75 +1,60 @@
-# CharityOS
+# CharityOS v0.1
 
-CharityOS is a personal execution system for turning long-term goals into daily action. Phase 1 establishes the production-oriented application foundation; product features and the remaining Schema v1 entities are deliberately not implemented yet.
+CharityOS is a private, mobile-first personal execution system connecting daily plans, authoritative focus time, learning roadmaps, evidence, reflection, and wellbeing. It intentionally has no composite productivity score.
 
-## Foundation
+## Architecture and features
 
-- Backend: Python 3.12, Django 5.2, Django REST Framework, PostgreSQL
-- Frontend: React 19, strict TypeScript, Vite, Tailwind CSS 4
-- Quality: Ruff, pytest/pytest-django, ESLint, Vitest, React Testing Library
-- Authentication direction: Django sessions and CSRF under one production origin (no auth endpoints yet)
-
-The only CharityOS domain table currently authorized is the custom `users.User`. The public infrastructure check is `GET /api/v1/health`.
+- Django 5.2 + DRF, PostgreSQL, session authentication and CSRF under one origin.
+- React 19, strict TypeScript, Vite and Tailwind; responsive installable PWA shell.
+- Daily plans retain historical task appearances, atomically carry unfinished work forward, and enforce at most three primary outcomes.
+- The server owns the focus timer clock and transition state. A partial unique constraint permits one open session per user; reloads reconstruct display time from server timestamps.
+- Arbitrary-depth roadmap nodes (`section`, `topic`, `item`), informational prerequisites, multiple resources and leaf-item progress.
+- Note/HTTPS evidence, accomplishments, sleep, exercise, meals, daily water/nutrition, daily reflection and Monday–Sunday weekly review.
+- Live-derived focus and planned-appearance metrics. Cancelled time is retained but excluded from ordinary focus analytics.
 
 ## Local setup
 
-Prerequisites are Python 3.12+, Node.js 24+, npm, and PostgreSQL 17+. Docker Compose is optional but is the shortest path to a matching local database.
+Prerequisites: Python 3.12+, Node.js 24+, npm, and PostgreSQL 16+ (17 recommended).
 
 ```bash
 cp .env.example .env
-# Edit .env; use a real random DJANGO_SECRET_KEY and local database password.
-docker compose up -d postgres
-
+# Set a local secret and database credentials in .env.
 python3 -m venv .venv
 .venv/bin/pip install -r backend/requirements-dev.txt
 (cd backend && ../.venv/bin/python manage.py migrate)
-
 (cd frontend && npm ci)
 ```
 
-The Compose defaults use database/user `charityos` and password `charityos-local`. If those defaults are used, set the same values in `.env`. An externally managed PostgreSQL instance is equally valid; set `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, and `POSTGRES_PORT` accordingly. Backend tests create and use a PostgreSQL test database, so the configured role needs permission to create databases.
+The private developer cluster on the original implementation machine listens on `localhost:5433`; set `POSTGRES_PORT=5433` there. This is local guidance, not a production default. Never alter the system PostgreSQL cluster on 5432 for this project. A configured test role must be able to create test databases.
 
-## Run the applications
-
-Use separate terminals:
+Create the first local account without storing a password in source control:
 
 ```bash
-cd backend
-../.venv/bin/python manage.py runserver
+(cd backend && ../.venv/bin/python manage.py bootstrap_charityos --email you@example.com --timezone Africa/Nairobi)
 ```
 
-```bash
-cd frontend
-npm run dev
-```
+The command prompts securely, then creates a 96-day primary challenge and default Area data.
 
-Open `http://localhost:5173`. Vite proxies same-origin `/api` requests to Django on `127.0.0.1:8000`; frontend code never needs a development-only cross-origin API URL.
-
-## Common commands
+## Development and validation
 
 ```bash
-# Migrations
-(cd backend && ../.venv/bin/python manage.py makemigrations --check --dry-run)
-(cd backend && ../.venv/bin/python manage.py migrate)
+# terminal 1
+(cd backend && ../.venv/bin/python manage.py runserver)
+# terminal 2 — Vite proxies /api to Django
+(cd frontend && npm run dev)
 
-# Backend validation
 .venv/bin/ruff check backend
 .venv/bin/ruff format --check backend
 (cd backend && ../.venv/bin/python manage.py check)
+(cd backend && ../.venv/bin/python manage.py makemigrations --check --dry-run)
 (cd backend && ../.venv/bin/pytest)
-
-# Frontend validation and production bundle
-(cd frontend && npm run lint)
-(cd frontend && npm run typecheck)
-(cd frontend && npm test)
-(cd frontend && npm run build)
+(cd frontend && npm run lint && npm run typecheck && npm test && npm run build)
 ```
 
-Production must supply `DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS`, and all PostgreSQL variables. Production settings enable secure session/CSRF cookies and HTTPS redirection. Secrets belong in the runtime secret store, never in source control or `VITE_*` variables.
+## Production
 
-## Tooling choices
+Build `frontend/dist`, serve it and `/static/` through the same reverse proxy/origin, route `/api/` and `/admin/` to Django, and run Django through a production WSGI server. Before application startup run `python manage.py migrate --noinput` and `python manage.py collectstatic --noinput`. Supply `DJANGO_SETTINGS_MODULE=config.settings.production`, `DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS`, `DJANGO_CSRF_TRUSTED_ORIGINS`, and PostgreSQL variables from the platform secret store. Production enables secure cookies, HTTPS redirect, proxy TLS recognition and HSTS.
 
-Ruff provides one fast Python lint/format workflow, while pytest-django makes database-backed Django tests explicit. ESLint covers TypeScript/React correctness, and Vitest plus React Testing Library tests behavior through the same Vite module pipeline. Tailwind uses the v4 Vite plugin rather than a legacy PostCSS configuration. Dependency lockfiles and pinned Python requirements make CI and local installs repeatable.
+## Deliberate v0.1 limits
 
-See [ADR 0001](docs/adr/0001-phase-1-technology-foundation.md) for the foundation decision and [the architecture](docs/architecture.md) for the approved system direction.
-
+No JWT, social auth, self-service password reset, recurrence, offline timer mutation, uploads/object storage, wearables, calorie counting, AI coach, social/team features, payments, immutable report snapshots, or composite score. See [the implementation report](docs/v0.1-implementation-report.md) and [API contract](docs/api-contract.md).

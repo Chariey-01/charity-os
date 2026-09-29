@@ -20,9 +20,14 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
+    "api",
     "users",
     "challenges",
     "planning",
+    "roadmaps",
+    "execution",
+    "records",
+    "reflections",
     "health",
 ]
 MIDDLEWARE = [
@@ -76,6 +81,7 @@ TIME_ZONE = "UTC"
 USE_I18N = True
 USE_TZ = True
 STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 AUTH_USER_MODEL = "users.User"
 # USERNAME_FIELD is protected by a functional unique constraint so mixed-case
@@ -94,3 +100,8 @@ REST_FRAMEWORK = {
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SAMESITE = "Lax"
+CSRF_TRUSTED_ORIGINS = [
+    origin
+    for origin in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",")
+    if origin
+]

@@ -1,3 +1,4 @@
+# ruff: noqa: DJ008
 import re
 import uuid
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -6,6 +7,8 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models.functions import Lower
+
+from challenges.models import Challenge
 
 HEX_COLOR_PATTERN = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
@@ -136,3 +139,173 @@ class DailyCapacity(models.Model):
                 errors["timezone_name"] = "Timezone must be a valid IANA zone name."
         if errors:
             raise ValidationError(errors)
+
+
+class Task(models.Model):
+    class Status(models.TextChoices):
+        PLANNED = "planned", "Planned"
+        COMPLETED = "completed", "Completed"
+        SKIPPED = "skipped", "Skipped"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="tasks"
+    )
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True, default="")
+    area = models.ForeignKey(
+        Area, null=True, blank=True, on_delete=models.SET_NULL, related_name="tasks"
+    )
+    roadmap_item = models.ForeignKey(
+        "roadmaps.RoadmapNode",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="tasks",
+    )
+    priority = models.PositiveSmallIntegerField(default=0)
+    estimated_minutes = models.PositiveIntegerField(null=True, blank=True)
+    task_type = models.CharField(max_length=40, blank=True, default="")
+    is_deep_work_default = models.BooleanField(default=False)
+    status = models.CharField(
+        max_length=12, choices=Status.choices, default=Status.PLANNED
+    )
+    completed_at = models.DateTimeField(null=True, blank=True)
+    skipped_at = models.DateTimeField(null=True, blank=True)
+    archived_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(status__in=("planned", "completed", "skipped")),
+                name="planning_task_status_valid",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        status="planned",
+                        completed_at__isnull=True,
+                        skipped_at__isnull=True,
+                    )
+                    | models.Q(
+                        status="completed",
+                        completed_at__isnull=False,
+                        skipped_at__isnull=True,
+                    )
+                    | models.Q(
+                        status="skipped",
+                        completed_at__isnull=True,
+                        skipped_at__isnull=False,
+                    )
+                ),
+                name="planning_task_terminal_fields_valid",
+            ),
+        ]
+
+
+class DailyPlan(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="daily_plans"
+    )
+    local_date = models.DateField()
+    timezone_name = models.CharField(max_length=64)
+    challenge = models.ForeignKey(
+        Challenge,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="daily_plans",
+    )
+    notes = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("user", "local_date"), name="planning_plan_user_date_unique"
+            )
+        ]
+
+
+class DailyPlanItem(models.Model):
+    class Kind(models.TextChoices):
+        PRIMARY = "primary", "Primary"
+        SECONDARY = "secondary", "Secondary"
+
+    class State(models.TextChoices):
+        CURRENT = "current", "Current"
+        CARRIED_FORWARD = "carried_forward", "Carried forward"
+        REMOVED = "removed", "Removed"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="daily_plan_items",
+    )
+    plan = models.ForeignKey(DailyPlan, on_delete=models.CASCADE, related_name="items")
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="plan_items")
+    kind = models.CharField(max_length=12, choices=Kind.choices, default=Kind.SECONDARY)
+    position = models.PositiveIntegerField(default=0)
+    state = models.CharField(
+        max_length=20, choices=State.choices, default=State.CURRENT
+    )
+    title_snapshot = models.CharField(max_length=200)
+    area_label_snapshot = models.CharField(max_length=80, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("task",),
+                condition=models.Q(state="current"),
+                name="planning_item_one_current_per_task",
+            ),
+            models.UniqueConstraint(
+                fields=("plan", "position"),
+                condition=models.Q(state="current"),
+                name="planning_item_current_position_unique",
+            ),
+        ]
+
+
+class PlanningEvent(models.Model):
+    class EventType(models.TextChoices):
+        PLANNED = "planned", "Planned"
+        CARRIED_OVER = "carried_over", "Carried over"
+        REMOVED = "removed", "Removed"
+        COMPLETED = "completed", "Completed"
+        SKIPPED = "skipped", "Skipped"
+        REOPENED = "reopened", "Reopened"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="planning_events",
+    )
+    event_type = models.CharField(max_length=20, choices=EventType.choices)
+    task = models.ForeignKey(
+        Task, null=True, on_delete=models.SET_NULL, related_name="planning_events"
+    )
+    source_item = models.ForeignKey(
+        DailyPlanItem,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="source_events",
+    )
+    destination_item = models.ForeignKey(
+        DailyPlanItem,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="destination_events",
+    )
+    snapshot = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
