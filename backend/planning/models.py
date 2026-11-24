@@ -314,6 +314,7 @@ class PlanningEvent(models.Model):
         COMPLETED = "completed", "Completed"
         SKIPPED = "skipped", "Skipped"
         REOPENED = "reopened", "Reopened"
+        STATUS_CHANGED = "status_changed", "Status changed"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(

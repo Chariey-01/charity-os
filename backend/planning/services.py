@@ -85,30 +85,50 @@ def carry_over(*, user, item, destination_date):
     return new_item
 
 
-@transaction.atomic
-def transition_task(*, user, task, target):
-    # Legacy names (planned/completed/skipped) stay accepted for callers.
-    target = Task.LEGACY_TO_STATUS.get(target, target)
-    task = Task.objects.select_for_update().get(pk=task.pk, user=user)
-    now = timezone.now()
+def _event_for(previous, target):
+    """History event name for a transition.
+
+    The names that existed before the workflow (completed, skipped,
+    reopened) are still used for those transitions so history reads the
+    same; moves between open states are recorded as status_changed.
+    """
     if target == Task.Status.DONE:
-        task.status, task.completed_at, task.cancelled_at = target, now, None
-    elif target == Task.Status.CANCELLED:
-        task.status, task.completed_at, task.cancelled_at = target, None, now
-    elif target == Task.Status.TODO:
-        task.status, task.completed_at, task.cancelled_at = target, None, None
-    else:
-        raise ValidationError("Invalid task transition.")
+        return PlanningEvent.EventType.COMPLETED
+    if target == Task.Status.CANCELLED:
+        return PlanningEvent.EventType.SKIPPED
+    if previous not in Task.OPEN_STATUSES:
+        return PlanningEvent.EventType.REOPENED
+    return PlanningEvent.EventType.STATUS_CHANGED
+
+
+@transaction.atomic
+def transition_task(*, user, task, target, reason=""):
+    """Move a task to ``target`` (any workflow status or a legacy name).
+
+    Idempotent: a task already in ``target`` is returned unchanged and no
+    event is written, so a repeated "complete" keeps the original
+    completion time. Every real change appends a PlanningEvent with the
+    previous and new status; existing events are never modified.
+    """
+    target = Task.LEGACY_TO_STATUS.get(target, target)
+    if target not in Task.Status.values:
+        raise ValidationError({"status": f"Unknown task status: {target}."})
+    task = Task.objects.select_for_update().get(pk=task.pk, user=user)
+    previous = task.status
+    if previous == target:
+        return task
+    now = timezone.now()
+    task.status = target
+    task.completed_at = now if target == Task.Status.DONE else None
+    task.cancelled_at = now if target == Task.Status.CANCELLED else None
     task.save(update_fields=("status", "completed_at", "cancelled_at", "updated_at"))
+    snapshot = {"title": task.title, "from": previous, "to": target}
+    if reason.strip():
+        snapshot["reason"] = reason.strip()
     PlanningEvent.objects.create(
         user=user,
-        # Event names are unchanged so history reads the same as before.
-        event_type={
-            "done": "completed",
-            "cancelled": "skipped",
-            "todo": "reopened",
-        }[target],
+        event_type=_event_for(previous, target),
         task=task,
-        snapshot={"title": task.title},
+        snapshot=snapshot,
     )
     return task
