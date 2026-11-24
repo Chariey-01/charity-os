@@ -363,6 +363,19 @@ class TaskViewSet(OwnedViewSet):
         )
 
     @action(detail=True, methods=["post"])
+    def transition(self, request, pk=None):
+        target = request.data.get("status")
+        if not target:
+            raise serializers.ValidationError({"status": "This field is required."})
+        task = transition_task(
+            user=request.user,
+            task=self.get_object(),
+            target=target,
+            reason=str(request.data.get("reason", "") or ""),
+        )
+        return Response(self.get_serializer(task).data)
+
+    @action(detail=True, methods=["post"])
     def reopen(self, request, pk=None):
         return Response(
             self.get_serializer(
