@@ -29,6 +29,7 @@ POST     /daily-plan-items/{id}/carry-over
 GET/POST /tasks                      GET/PATCH /tasks/{id}
 POST     /tasks/{id}/complete        POST /tasks/{id}/skip
 POST     /tasks/{id}/reopen          POST /tasks/{id}/archive
+POST     /tasks/{id}/transition
 
 GET/POST /roadmaps                   GET/PATCH /roadmaps/{id}
 GET      /roadmaps/{id}/tree         POST /roadmaps/{id}/nodes
@@ -71,7 +72,7 @@ GET /analytics/metrics               GET /search
 
 Adding/reordering plan items enforces no more than three current primary outcomes in one locked transaction. An unfinished task may have only one current planned appearance. Carry-over accepts a destination date, marks the source item `carried_forward`, creates exactly one destination item, and appends a planning event atomically. A retry returns that same result. Historical source items are never deleted by carry-over.
 
-Task transitions are `planned -> completed|skipped` and `completed|skipped -> planned` via reopen. There are no active/paused task transitions and no recurrence contract.
+Task transitions follow the workflow in "Task statuses" below (any status to any other, through one service, with history). The legacy `planned -> completed|skipped` and reopen endpoints remain as aliases. There is no recurrence contract.
 
 Planned completion responses define numerator and denominator in appearances: completed eligible planned appearances divided by eligible planned appearances.
 
@@ -126,3 +127,16 @@ POST  /areas/ensure-defaults
 ```
 
 `start_local`/`end_local` are wall-clock times without an offset, interpreted in `timezone_name` (default: the user's). Entries cannot be deleted; cancel them instead. `/sessions/*` endpoints keep a linked entry in sync, and focus sessions now include `schedule_entry`.
+
+## Task statuses (implemented, migration `planning.0007`)
+
+Tasks use the workflow `backlog`, `todo`, `in_progress`, `in_review`, `blocked`, `done`, `cancelled`. Only `done` (`completed_at`) and `cancelled` (`cancelled_at`, formerly `skipped_at`) carry a timestamp, and both timestamps are read-only.
+
+- `POST /tasks/{id}/transition {status, reason?}` moves a task to any status. Repeating a transition is a no-op that keeps the original timestamp. Every change appends a history event with `from`, `to` and the reason.
+- `POST /tasks` and `PATCH /tasks/{id}` accept `status`. Every status change goes through the same transition rules; unknown values return 400.
+- **Compatibility:**
+  - `complete`, `skip` and `reopen` still map to `done`, `cancelled` and `todo`.
+  - The legacy input values `planned`, `completed` and `skipped` are still accepted.
+  - Responses include a deprecated read-only `legacy_status` (`planned`, `completed` or `skipped`) for one release.
+- **Breaking:** response `status` values and the `cancelled_at` field name changed. See [migrations.md](migrations.md).
+

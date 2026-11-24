@@ -306,7 +306,7 @@ Re-checked after the scheduler merge and rebase:
 | `skipped` | `cancelled` | `skipped_at` renamed to `cancelled_at` (value kept) |
 | — | `backlog`, `in_progress`, `in_review`, `blocked` | none |
 
-- **Migration `planning.0007_task_status_workflow`** (depends on `planning.0006`, `scheduling.0001`):
+- **Migration `planning.0007_task_status_workflow`** (depends on `planning.0006` only; a `scheduling` dependency was considered and dropped because it would couple rollbacks for no benefit):
   1. Drop the two task status constraints.
   2. Rename `skipped_at` to `cancelled_at`.
   3. Widen `status` choices.
@@ -322,6 +322,7 @@ Re-checked after the scheduler merge and rebase:
   - New `POST /tasks/{id}/transition {status}`.
   - Responses add a read-only, deprecated `legacy_status` for one release.
 - **Rollback:** take a `pg_dump`, then `migrate planning 0006`.
+- **As built:** `planning.0008` adds the `status_changed` history event choice (no SQL). Repeated transitions are no-ops that keep the original timestamp. Status writes through `POST`/`PATCH /tasks` also go through the service; this fixed the HTTP 500 recorded in §12. Full migration notes: [migrations.md](migrations.md).
 - **Tests:**
   - A migration test in both directions with history, plan items, evidence, sessions and schedule entries attached.
   - Constraint tests.

@@ -66,7 +66,7 @@ This creates 13 roadmap containers with nested sections/items and skips any road
 
 ## Production
 
-Build `frontend/dist`, serve it and `/static/` through the same reverse proxy/origin, route `/api/` and `/admin/` to Django, and run Django through a production WSGI server. Before application startup run `python manage.py migrate --noinput` and `python manage.py collectstatic --noinput`. Supply `DJANGO_SETTINGS_MODULE=config.settings.production`, `DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS`, `DJANGO_CSRF_TRUSTED_ORIGINS`, and PostgreSQL variables from the platform secret store. Production enables secure cookies, HTTPS redirect, proxy TLS recognition and HSTS.
+Build `frontend/dist`, serve it and `/static/` through the same reverse proxy/origin, route `/api/` and `/admin/` to Django, and run Django through a production WSGI server. Before application startup take a database backup, then run `python manage.py migrate --noinput` and `python manage.py collectstatic --noinput`; migration order, dependencies and rollback notes are in [docs/migrations.md](docs/migrations.md). Supply `DJANGO_SETTINGS_MODULE=config.settings.production`, `DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS`, `DJANGO_CSRF_TRUSTED_ORIGINS`, and PostgreSQL variables from the platform secret store. Production enables secure cookies, HTTPS redirect, proxy TLS recognition and HSTS.
 
 ## Reminders and installation
 
