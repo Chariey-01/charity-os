@@ -1,103 +1,275 @@
-import { FormEvent as ReactFormEvent, ReactNode, useEffect, useState } from "react";
-import "./overrides.css";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-type FormEvent<T = HTMLFormElement> = ReactFormEvent<T>;
+import { Icon } from "../components/ui";
+import { ProfileScreen } from "../features/profile/ProfileScreen";
+import { RoadmapsScreen } from "../features/roadmaps/RoadmapsScreen";
+import { EntrySheet } from "../features/schedule/EntrySheet";
+import { QuickAddSheet } from "../features/schedule/QuickAddSheet";
+import { TodayScreen } from "../features/today/TodayScreen";
+import { ApiError, api, post } from "../lib/api";
+import { useOnline } from "../lib/pwa";
+import { todayIn } from "../lib/time";
+import type { Area, Preferences, QuickAddDefaults, Session, User } from "../lib/types";
+import { AppContext, AppContextValue, EntrySheetMode, ToastKind } from "./context";
+import { navigate, tabOf, useHashRoute } from "./router";
 
-type User = { id: string; email: string; display_name: string; timezone: string };
-type Challenge = { id: string; name: string; description?: string; start_date: string; end_date: string; status: string; is_primary: boolean; total_days: number; current_day: number; days_remaining: number; progress_percent: number; phase: string };
-type Session = { id: string; title: string; status: "active" | "paused"; started_at: string; version: number; elapsed_seconds: number; task?: string; roadmap_item?: string; area: string };
-type Task = { id: string; title: string; status: string; area?: string; roadmap_item?: string; is_deep_work_default: boolean };
-type Area = { id: string; name: string; color: string };
-type PlanItem = { id: string; task: string; kind: "primary" | "secondary"; position: number; title_snapshot: string; area_label_snapshot: string };
-type Today = { plan: { id: string; local_date: string; challenge?: string }; challenge: Challenge | null; capacity: { available_minutes: number; deep_work_minutes: number } | null; items: PlanItem[]; tasks: Task[] };
-type Metrics = { total_focused_minutes: number; deep_work_minutes: number; planned_appearances: number; completed_planned_appearances: number; planned_completion_rate: number; challenge: Challenge | null; roadmaps: { id: string; title: string; completed_eligible_items: number; eligible_items: number; progress_ratio: number }[]; focus_trend: { date: string; minutes: number }[]; deep_work_trend: { date: string; minutes: number }[]; planned_vs_completed: { date: string; planned: number; completed: number }[]; area_distribution: { area: string; minutes: number }[]; exercise_trend: { date: string; minutes: number }[]; sleep_trend: { date: string; hours: number }[] };
-type Roadmap = { id: string; title: string; description: string; status: string };
-type Node = { id: string; title: string; description: string; node_type: string; state: string; time_invested_seconds: number; linked_task_ids: string[]; resources: { id: string; label: string; url: string }[]; evidence_count: number; children: Node[] };
-type View = "home" | "roadmap" | "today" | "insights" | "more" | "health" | "reflect" | "history";
-
-function cookie(name: string) { return document.cookie.split("; ").find((row) => row.startsWith(`${name}=`))?.split("=")[1] ?? ""; }
-async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api/v1${path}`, { credentials: "same-origin", ...init, headers: { "Content-Type": "application/json", "X-CSRFToken": decodeURIComponent(cookie("csrftoken")), ...init?.headers } });
-  if (!response.ok) { const payload = await response.json().catch(() => null); throw new Error(payload?.detail ?? payload?.error?.message ?? "Request failed"); }
-  return response.status === 204 ? (undefined as T) : response.json();
-}
 // Kept exported so timestamp reconstruction stays independently testable.
 // eslint-disable-next-line react-refresh/only-export-components
-export function elapsedSeconds(startedAt: string, now = Date.now()) { return Math.max(0, Math.floor((now - new Date(startedAt).getTime()) / 1000)); }
-function clock(seconds: number) { return `${String(Math.floor(seconds / 3600)).padStart(2, "0")}:${String(Math.floor((seconds % 3600) / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`; }
-function todayISO() { return new Date().toISOString().slice(0, 10); }
+export { elapsedSeconds } from "../lib/time";
+
+const DEFAULT_PREFS: Preferences = {
+  reminders_enabled: false,
+  reminder_lead_minutes: 10,
+  start_reminders_enabled: true,
+  daily_planning_reminder_enabled: false,
+  daily_planning_time: "07:30:00",
+  weekly_review_reminder_enabled: false,
+  weekly_review_weekday: 7,
+  weekly_review_time: "18:00:00",
+  show_streaks: false,
+  celebrations_enabled: true,
+  default_today_view: "agenda",
+};
+
+const NAV = [
+  { tab: "today", label: "Today", icon: "today" },
+  { tab: "roadmaps", label: "Roadmaps", icon: "roadmaps" },
+  { tab: "profile", label: "Profile", icon: "profile" },
+] as const;
+
+type Toast = { id: number; message: string; kind: ToastKind };
 
 function Login({ onLogin }: { onLogin: (user: User) => void }) {
-  const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
-  async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setBusy(true); setError(""); const form = new FormData(event.currentTarget); try { await api("/auth/csrf"); onLogin(await api<User>("/auth/login", { method: "POST", body: JSON.stringify({ email: form.get("email"), password: form.get("password") }) })); } catch (err) { setError(err instanceof Error ? err.message : "Unable to sign in"); } finally { setBusy(false); } }
-  return <main className="auth"><section className="auth-card"><div className="brand-mark">C</div><p className="eyebrow">CHARITYOS</p><h1>Build the days that<br />build your life.</h1><p className="muted">A permanent personal execution system for focused work, learning, and wellbeing.</p><form onSubmit={submit}><label>Email<input name="email" type="email" required autoComplete="email" /></label><label>Password<input name="password" type="password" required autoComplete="current-password" /></label>{error && <p className="error" role="alert">{error}</p>}<button className="primary" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button></form></section></main>;
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    const form = new FormData(event.currentTarget);
+    try {
+      await api("/auth/csrf");
+      onLogin(await post<User>("/auth/login", { email: form.get("email"), password: form.get("password") }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to sign in");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <main className="auth">
+      <section className="auth-card">
+        <div className="brand-mark" aria-hidden="true">C</div>
+        <p className="eyebrow">CharityOS</p>
+        <h1>Plan the day. Live it. See what happened.</h1>
+        <p className="muted">Your permanent personal scheduler for work, learning, health and life.</p>
+        <form onSubmit={submit} className="form">
+          <label className="field">
+            <span>Email</span>
+            <input name="email" type="email" required autoComplete="email" inputMode="email" />
+          </label>
+          <label className="field">
+            <span>Password</span>
+            <input name="password" type="password" required autoComplete="current-password" />
+          </label>
+          {error && <p className="form-error" role="alert">{error}</p>}
+          <button className="button block" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
+        </form>
+      </section>
+    </main>
+  );
 }
-
-function ChallengeBadge({ challenge }: { challenge: Challenge | null }) {
-  if (!challenge) return <div className="notice">No primary challenge selected. Create one in More.</div>;
-  const label = challenge.phase === "upcoming" ? `Starts ${challenge.start_date}` : challenge.phase === "completed" ? "Challenge complete" : `DAY ${challenge.current_day} OF ${challenge.total_days} · ${challenge.days_remaining} DAYS REMAINING`;
-  return <section className="challenge-banner"><div><p className="eyebrow">{challenge.name}</p><strong>{label}</strong><small>{challenge.progress_percent}% through challenge</small></div><div className="progress"><i style={{ width: `${challenge.progress_percent}%` }} /></div></section>;
-}
-
-function Timer({ session, refresh, onFinish }: { session: Session; refresh: () => void; onFinish: () => void }) {
-  const [now, setNow] = useState(Date.now()); const [busy, setBusy] = useState(false); const [finishing, setFinishing] = useState(false); const [outcome, setOutcome] = useState(""); const [learning, setLearning] = useState(""); const [evidence, setEvidence] = useState("");
-  useEffect(() => { const id = window.setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(id); }, []);
-  const seconds = session.status === "active" ? Math.max(session.elapsed_seconds, elapsedSeconds(session.started_at, now)) : session.elapsed_seconds;
-  async function command(name: "pause" | "resume") { setBusy(true); try { await api(`/sessions/${session.id}/${name}`, { method: "POST", body: JSON.stringify(name === "pause" ? { id: crypto.randomUUID(), expected_version: session.version } : { expected_version: session.version }) }); refresh(); } finally { setBusy(false); } }
-  async function finish(event: FormEvent) { event.preventDefault(); setBusy(true); try { await api(`/sessions/${session.id}/finish`, { method: "POST", body: JSON.stringify({ expected_version: session.version, outcome, learning }) }); if (evidence.trim()) await api("/evidence", { method: "POST", body: JSON.stringify({ kind: evidence.startsWith("https://github.com/") ? "github" : evidence.startsWith("https://") ? "url" : "note", text: evidence.startsWith("https://") ? "" : evidence, url: evidence.startsWith("https://") ? evidence : "", session: session.id }) }); setFinishing(false); onFinish(); } finally { setBusy(false); } }
-  return <section className="timer-card"><div><span className="live-dot" /> {session.status === "paused" ? "Paused — time is not increasing" : "Focus in progress"}</div><h2>{session.title}</h2><strong data-testid="elapsed-timer">{clock(seconds)}</strong><div className="timer-actions"><button disabled={busy} onClick={() => command(session.status === "paused" ? "resume" : "pause")}>{session.status === "paused" ? "Resume" : "Pause"}</button><button className="finish" disabled={busy} onClick={() => setFinishing(true)}>Finish</button></div>{finishing && <form className="finish-form" onSubmit={finish}><label>Outcome<textarea value={outcome} onChange={(event) => setOutcome(event.target.value)} placeholder="What did I accomplish?" /></label><label>Learning<textarea value={learning} onChange={(event) => setLearning(event.target.value)} placeholder="What did I learn?" /></label><label>Evidence note or HTTPS/GitHub URL<input value={evidence} onChange={(event) => setEvidence(event.target.value)} placeholder="A note or https://…" /></label><button className="primary" disabled={busy}>Save and finish</button><button type="button" className="quiet" onClick={() => setFinishing(false)}>Keep session open</button></form>}</section>;
-}
-
-function TaskRow({ task, onAction, onFocus }: { task: Task; onAction: (id: string, action: "complete" | "skip" | "reopen") => void; onFocus: (task: Task) => void }) {
-  return <div className="task"><span className="task-number">{task.is_deep_work_default ? "✦" : "·"}</span><div><b>{task.title}</b><small>{task.status} {task.area ? "· assigned area" : ""}</small></div><div className="task-actions">{task.status === "planned" && <><button onClick={() => onFocus(task)}>Focus</button><button onClick={() => onAction(task.id, "complete")}>Done</button><button onClick={() => onAction(task.id, "skip")}>Skip</button></>}{task.status !== "planned" && <button onClick={() => onAction(task.id, "reopen")}>Reopen</button>}</div></div>;
-}
-
-function TodayView({ today, areas, onRefresh, onFocus, onAction }: { today: Today; areas: Area[]; onRefresh: () => void; onFocus: (task: Task) => void; onAction: (id: string, action: "complete" | "skip" | "reopen") => void }) {
-  const [showAdd, setShowAdd] = useState(false); const [title, setTitle] = useState(""); const [area, setArea] = useState(areas[0]?.id ?? ""); const [kind, setKind] = useState<"primary" | "secondary">("primary"); const [available, setAvailable] = useState(today.capacity?.available_minutes ?? 480); const [deep, setDeep] = useState(today.capacity?.deep_work_minutes ?? 240); const primaryCount = today.items.filter((item) => item.kind === "primary").length;
-  async function add(event: FormEvent) { event.preventDefault(); const task = await api<Task>("/tasks", { method: "POST", body: JSON.stringify({ title, area: area || null, status: "planned", is_deep_work_default: deep > 0 }) }); await api("/daily-plan-items", { method: "POST", body: JSON.stringify({ plan: today.plan.id, task: task.id, kind, position: today.items.length }) }); setTitle(""); setShowAdd(false); onRefresh(); }
-  async function saveCapacity(event: FormEvent) { event.preventDefault(); await api("/capacities", { method: "POST", body: JSON.stringify({ local_date: today.plan.local_date, timezone_name: Intl.DateTimeFormat().resolvedOptions().timeZone, available_minutes: available, deep_work_minutes: deep }) }); onRefresh(); }
-  const plannedTasks = today.items.map((item) => today.tasks.find((task) => task.id === item.task)).filter(Boolean) as Task[];
-  return <section><header><p className="eyebrow">TODAY · {today.plan.local_date}</p><h1>Make the day real.</h1><p className="muted">Choose up to three primary outcomes, then work the next clear step.</p></header><ChallengeBadge challenge={today.challenge} /><section className="panel"><div className="section-title"><div><p className="eyebrow">PRIMARY OUTCOMES</p><h2>{primaryCount}/3 selected</h2></div><button className="text-button" onClick={() => setShowAdd(true)}>Add outcome</button></div>{plannedTasks.filter((task) => today.items.find((item) => item.task === task.id)?.kind === "primary").map((task) => <TaskRow key={task.id} task={task} onAction={onAction} onFocus={onFocus} />)}{plannedTasks.filter((task) => today.items.find((item) => item.task === task.id)?.kind !== "primary").length > 0 && <><p className="eyebrow">SUPPORTING TASKS</p>{plannedTasks.filter((task) => today.items.find((item) => item.task === task.id)?.kind !== "primary").map((task) => <TaskRow key={task.id} task={task} onAction={onAction} onFocus={onFocus} />)}</>}</section><section className="panel"><div className="section-title"><div><p className="eyebrow">CAPACITY</p><h2>Protect your energy</h2></div></div><form className="inline-form" onSubmit={saveCapacity}><label>Available minutes<input type="number" min="0" max="1440" value={available} onChange={(e) => setAvailable(Number(e.target.value))} /></label><label>Deep-work minutes<input type="number" min="0" max={available} value={deep} onChange={(e) => setDeep(Number(e.target.value))} /></label><button className="primary">Save capacity</button></form></section>{showAdd && <section className="panel"><div className="section-title"><h2>Add to today</h2><button className="text-button" onClick={() => setShowAdd(false)}>Close</button></div><form className="form" onSubmit={add}><label>Outcome or task<input autoFocus required value={title} onChange={(e) => setTitle(e.target.value)} /></label><label>Area<select value={area} onChange={(e) => setArea(e.target.value)} required><option value="">Select an area</option>{areas.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></label><label>Plan type<select value={kind} onChange={(e) => setKind(e.target.value as "primary" | "secondary")}><option value="primary" disabled={primaryCount >= 3}>Primary outcome</option><option value="secondary">Supporting task</option></select></label><button className="primary">Add to Today</button></form></section>}</section>;
-}
-
-function RoadmapView({ roadmaps, refreshToday, onFocus }: { roadmaps: Roadmap[]; refreshToday: () => void; onFocus: (task: Task) => void }) {
-  const [selected, setSelected] = useState<{ roadmap: Roadmap; nodes: Node[] } | null>(null); const [actions, setActions] = useState<{ roadmap_id: string; roadmap_title: string; node_id: string; title: string; reason: string }[]>([]); const [message, setMessage] = useState("");
-  useEffect(() => { api<typeof actions>("/roadmaps/next-actions").then(setActions); }, []);
-  async function open(roadmap: Roadmap) { setSelected(await api<{ roadmap: Roadmap; nodes: Node[] }>(`/roadmaps/${roadmap.id}/tree`)); }
-  async function createTask(node: Node, focus = false) { const task = await api<Task>("/tasks", { method: "POST", body: JSON.stringify({ title: node.title, roadmap_item: node.id, status: "planned", is_deep_work_default: true }) }); await api("/daily-plan-items", { method: "POST", body: JSON.stringify({ plan: (await api<Today>("/daily-plans/today")).plan.id, task: task.id, kind: "secondary", position: 99 }) }); refreshToday(); setMessage("Added to Today"); if (focus) onFocus(task); }
-  async function complete(node: Node) { await api(`/roadmap-nodes/${node.id}`, { method: "PATCH", body: JSON.stringify({ state: "completed" }) }); setMessage("Marked complete"); if (selected) open(selected.roadmap); }
-  function render(nodes: Node[], depth = 0): ReactNode[] { return nodes.flatMap((node) => { const actionsForNode = node.node_type === "item" && node.state === "planned" ? <div className="item-actions"><button onClick={() => createTask(node)}>Add to Today</button><button onClick={() => createTask(node, true)}>Start focus</button><button onClick={() => complete(node)}>Done</button></div> : null; const card = <article className={`roadmap-node depth-${Math.min(depth, 3)}`} key={node.id}><div><span className={`node-state ${node.state}`} /> <b>{node.title}</b>{node.description && <p>{node.description.replace("Next action: ", "")}</p>}<small>{node.node_type} · {node.evidence_count} evidence · {Math.round(node.time_invested_seconds / 60)} min focused</small></div>{actionsForNode}</article>; return [card, ...(node.children ? render(node.children, depth + 1) : [])]; }); }
-  return <section><header><p className="eyebrow">ROADMAPS</p><h1>Your long-lived paths.</h1><p className="muted">Challenges have dates. Your roadmaps and evidence continue across them.</p></header>{actions.length > 0 && <section className="next-panel"><p className="eyebrow">NEXT UP</p>{actions.slice(0, 5).map((action) => <button key={action.node_id} onClick={() => { const roadmap = roadmaps.find((item) => item.id === action.roadmap_id); if (roadmap) open(roadmap); }}><span>{action.roadmap_title}</span><b>{action.title}</b><small>{action.reason}</small></button>)}</section>}<div className="roadmap-list">{roadmaps.map((roadmap) => <button className={`roadmap-card ${selected?.roadmap.id === roadmap.id ? "selected" : ""}`} key={roadmap.id} onClick={() => open(roadmap)}><div><span className="eyebrow">{roadmap.status}</span><h2>{roadmap.title}</h2><p>{roadmap.description.split("\n\n")[0]?.split("\n")[1]}</p></div><span className="chevron">→</span></button>)}</div>{selected && <section className="panel roadmap-detail"><div className="section-title"><h2>{selected.roadmap.title}</h2><button className="text-button" onClick={() => setSelected(null)}>Close</button></div><div className="guidance">{selected.roadmap.description.split("\n\n").map((part) => { const [heading, ...body] = part.split("\n"); return <div key={heading}><b>{heading}</b><p>{body.join("\n")}</p></div>; })}</div><h3>Nested work</h3>{render(selected.nodes)}{message && <p className="success">{message}</p>}</section>}</section>;
-}
-
-function Insights({ metrics, setPeriod }: { metrics: Metrics; setPeriod: (period: string) => void }) {
-  const maxFocus = Math.max(1, ...metrics.focus_trend.map((item) => item.minutes));
-  return <section><header><p className="eyebrow">INSIGHTS</p><h1>See what actually happened.</h1><p className="muted">Historical activity, without a composite productivity score.</p></header><div className="filter-row">{["7d", "30d", "90d", "challenge", "year"].map((period) => <button key={period} onClick={() => setPeriod(period)}>{period === "7d" ? "7 days" : period === "30d" ? "30 days" : period === "90d" ? "90 days" : period === "challenge" ? "Challenge" : "This year"}</button>)}</div><section className="metric-grid"><article><span>Focused minutes</span><strong>{metrics.total_focused_minutes}</strong></article><article><span>Deep work</span><strong>{metrics.deep_work_minutes}</strong></article></section><Chart title="Focus trend" values={metrics.focus_trend.map((item) => ({ label: item.date.slice(5), value: item.minutes }))} max={maxFocus} suffix=" min" /><Chart title="Deep-work trend" values={metrics.deep_work_trend.map((item) => ({ label: item.date.slice(5), value: item.minutes }))} max={Math.max(1, ...metrics.deep_work_trend.map((item) => item.minutes))} suffix=" min" /><section className="panel"><div className="section-title"><h2>Roadmap progress</h2><span className="muted">completed / eligible</span></div>{metrics.roadmaps.map((roadmap) => <div className="bar-row" key={roadmap.id}><span>{roadmap.title}</span><div className="progress"><i style={{ width: `${roadmap.progress_ratio * 100}%` }} /></div><small>{roadmap.completed_eligible_items}/{roadmap.eligible_items} · {Math.round(roadmap.progress_ratio * 100)}%</small></div>)}</section><section className="panel"><div className="section-title"><h2>Planned vs completed</h2></div>{metrics.planned_vs_completed.slice(-14).map((item) => <div className="comparison-row" key={item.date}><span>{item.date.slice(5)}</span><i style={{ width: `${Math.min(100, item.planned * 25)}%` }} /><b>{item.completed}/{item.planned}</b></div>)}</section><section className="split-panels"><Chart title="Exercise" values={metrics.exercise_trend.slice(-14).map((item) => ({ label: item.date.slice(5), value: item.minutes }))} max={Math.max(1, ...metrics.exercise_trend.map((item) => item.minutes))} suffix=" min" /><Chart title="Sleep" values={metrics.sleep_trend.slice(-14).map((item) => ({ label: item.date.slice(5), value: item.hours }))} max={Math.max(1, ...metrics.sleep_trend.map((item) => item.hours))} suffix=" h" /></section></section>;
-}
-function Chart({ title, values, max, suffix }: { title: string; values: { label: string; value: number }[]; max: number; suffix: string }) { return <section className="panel chart"><div className="section-title"><h2>{title}</h2><span className="muted">daily</span></div><div className="bars">{values.map((item) => <div className="bar" title={`${item.label}: ${item.value}${suffix}`} key={item.label}><i style={{ height: `${Math.max(item.value ? 4 : 1, (item.value / max) * 100)}%` }} /><small>{item.label}</small></div>)}</div></section>; }
-
-function Health({ user }: { user: User }) { const [message, setMessage] = useState(""); const [exercise, setExercise] = useState({ activity: "", minutes: 30 }); const [water, setWater] = useState(2000); const [meal, setMeal] = useState(""); const [sleep, setSleep] = useState({ started_at: "22:30", woke_at: "06:30", quality: 4 }); const [nutrition, setNutrition] = useState(4); async function save(event: FormEvent) { event.preventDefault(); const form = new FormData(event.currentTarget); const mode = form.get("mode"); const date = todayISO(); if (mode === "exercise") { const start = new Date(`${date}T07:00`); await api("/exercise-logs", { method: "POST", body: JSON.stringify({ activity: exercise.activity, started_at: start.toISOString(), ended_at: new Date(start.getTime() + exercise.minutes * 60000).toISOString() }) }); } if (mode === "water") await api("/water", { method: "POST", body: JSON.stringify({ local_date: date, timezone_name: user.timezone, total_ml: water }) }); if (mode === "meal") await api("/meal-logs", { method: "POST", body: JSON.stringify({ local_date: date, timezone_name: user.timezone, meal_type: form.get("meal_type"), description: meal }) }); if (mode === "nutrition") await api("/nutrition", { method: "POST", body: JSON.stringify({ local_date: date, timezone_name: user.timezone, rating: nutrition }) }); if (mode === "sleep") { const start = new Date(`${date}T${sleep.started_at}:00`); const wake = new Date(`${date}T${sleep.woke_at}:00`); if (wake <= start) wake.setDate(wake.getDate() + 1); await api("/sleep-logs", { method: "POST", body: JSON.stringify({ started_at: start.toISOString(), woke_at: wake.toISOString(), timezone_name: user.timezone, quality: sleep.quality }) }); } setMessage("Saved to your health history"); } return <section><header><p className="eyebrow">HEALTH</p><h1>Care for the system.</h1><p className="muted">Health history stays separate from productivity scoring.</p></header><div className="health-grid"><HealthForm mode="exercise" title="Exercise" onSubmit={save}><label>Activity<input value={exercise.activity} onChange={(e) => setExercise({ ...exercise, activity: e.target.value })} required /></label><label>Minutes<input type="number" value={exercise.minutes} onChange={(e) => setExercise({ ...exercise, minutes: Number(e.target.value) })} /></label></HealthForm><HealthForm mode="water" title="Water" onSubmit={save}><label>Total ml<input type="number" value={water} onChange={(e) => setWater(Number(e.target.value))} /></label></HealthForm><HealthForm mode="meal" title="Meal" onSubmit={save}><label>Meal type<select name="meal_type"><option>Breakfast</option><option>Lunch</option><option>Dinner</option><option>Snack</option></select></label><label>Description<textarea value={meal} onChange={(e) => setMeal(e.target.value)} required /></label></HealthForm><HealthForm mode="nutrition" title="Nutrition rating" onSubmit={save}><label>Rating (1–5)<input type="number" min="1" max="5" value={nutrition} onChange={(e) => setNutrition(Number(e.target.value))} /></label></HealthForm><HealthForm mode="sleep" title="Sleep" onSubmit={save}><label>Sleep start<input type="time" value={sleep.started_at} onChange={(e) => setSleep({ ...sleep, started_at: e.target.value })} /></label><label>Wake time<input type="time" value={sleep.woke_at} onChange={(e) => setSleep({ ...sleep, woke_at: e.target.value })} /></label><label>Quality<input type="number" min="1" max="5" value={sleep.quality} onChange={(e) => setSleep({ ...sleep, quality: Number(e.target.value) })} /></label></HealthForm></div>{message && <p className="success">{message}</p>}</section>; }
-function HealthForm({ mode, title, onSubmit, children }: { mode: string; title: string; onSubmit: (event: FormEvent) => void; children: ReactNode }) { return <form className="panel form" onSubmit={onSubmit}><input type="hidden" name="mode" value={mode} /><h2>{title}</h2>{children}<button className="primary">Save</button></form>; }
-
-function Reflect() { const [weekly, setWeekly] = useState(false); const [message, setMessage] = useState(""); async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); if (weekly) { const date = new Date(); const monday = new Date(date); monday.setDate(date.getDate() - ((date.getDay() + 6) % 7)); const start = monday.toISOString().slice(0, 10); const end = new Date(monday.getTime() + 6 * 86400000).toISOString().slice(0, 10); await api("/weekly-reviews", { method: "POST", body: JSON.stringify({ week_start_date: start, week_end_date: end, timezone_name: Intl.DateTimeFormat().resolvedOptions().timeZone, wins: data.get("wins"), lessons: data.get("lessons"), next_week: data.get("next_week"), closed_at: new Date().toISOString() }) }); } else await api("/daily-reflections", { method: "POST", body: JSON.stringify({ local_date: todayISO(), timezone_name: Intl.DateTimeFormat().resolvedOptions().timeZone, went_well: data.get("wins"), learned: data.get("lessons"), improve: data.get("next_week"), closed_at: new Date().toISOString() }) }); setMessage(weekly ? "Weekly review saved" : "Day closed"); } return <section><header><p className="eyebrow">REFLECTION</p><h1>{weekly ? "Review the week." : "Close your day."}</h1><p className="muted">Notice what worked, learn, and choose the next clear step.</p></header><div className="segmented"><button className={!weekly ? "selected" : ""} onClick={() => setWeekly(false)}>Daily reflection</button><button className={weekly ? "selected" : ""} onClick={() => setWeekly(true)}>Weekly review</button></div><form className="panel form" onSubmit={submit}><label>{weekly ? "Wins" : "What went well?"}<textarea name="wins" required /></label><label>{weekly ? "Lessons" : "What did you learn?"}<textarea name="lessons" required /></label><label>{weekly ? "Next week" : "What will you improve?"}<textarea name="next_week" required /></label><button className="primary">Save reflection</button>{message && <p className="success">{message}</p>}</form></section>; }
-
-function History() {
-  const [entries, setEntries] = useState<{ kind: string; title: string; detail: string }[]>([]);
-  useEffect(() => { Promise.all([api<Task[]>("/tasks"), api<{ title: string; duration_seconds: number; outcome: string }[]>("/sessions"), api<{ kind: string; text: string; url: string }[]>("/evidence"), api<{ title: string; local_date: string }[]>("/accomplishments"), api<{ local_date: string; went_well: string }[]>("/daily-reflections")]).then(([tasks, sessions, evidence, wins, reflections]) => setEntries([...tasks.filter((task) => task.status === "completed").map((task) => ({ kind: "Completed task", title: task.title, detail: task.status })), ...sessions.map((session) => ({ kind: "Focus", title: session.title, detail: `${Math.round((session.duration_seconds ?? 0) / 60)} min · ${session.outcome ?? ""}` })), ...evidence.map((item) => ({ kind: "Evidence", title: item.text || item.url, detail: item.kind })), ...wins.map((win) => ({ kind: "Accomplishment", title: win.title, detail: win.local_date })), ...reflections.map((reflection) => ({ kind: "Reflection", title: reflection.went_well, detail: reflection.local_date }))])); }, []);
-  return <section><header><p className="eyebrow">HISTORY</p><h1>What you actually did.</h1><p className="muted">Completed tasks, focus, evidence, accomplishments, and reflections remain available across challenges.</p></header><section className="panel">{entries.length ? entries.map((entry, index) => <div className="challenge-row" key={`${entry.kind}-${index}`}><div><small>{entry.kind}</small><b>{entry.title || "Untitled entry"}</b></div><span className="muted">{entry.detail}</span></div>) : <div className="empty">Your recorded history will appear here.</div>}</section></section>;
-}
-
-function More({ user, challenges, reload, onLogout }: { user: User; challenges: Challenge[]; reload: () => void; onLogout: () => void }) { const [name, setName] = useState(""); const [start, setStart] = useState(todayISO()); const [end, setEnd] = useState(todayISO()); async function create(event: FormEvent) { event.preventDefault(); await api("/challenges", { method: "POST", body: JSON.stringify({ name, start_date: start, end_date: end, status: "active", is_primary: challenges.length === 0 }) }); setName(""); reload(); } return <section><header><p className="eyebrow">MORE</p><h1>Keep going beyond one challenge.</h1><p className="muted">CharityOS is permanent. Challenges are dated containers for your work.</p></header><section className="panel"><div className="section-title"><h2>Challenges</h2><span className="muted">{user.email}</span></div>{challenges.map((challenge) => <div className="challenge-row" key={challenge.id}><div><b>{challenge.name}</b><small>{challenge.start_date} → {challenge.end_date} · {challenge.phase}</small></div><div>{challenge.is_primary ? <span className="status completed">Primary</span> : <button onClick={async () => { await api(`/challenges/${challenge.id}/set-primary`, { method: "POST" }); reload(); }}>Use this</button>}{!challenge.is_primary && <button onClick={async () => { await api(`/challenges/${challenge.id}/archive`, { method: "POST" }); reload(); }}>Archive</button>}</div></div>)}<form className="form" onSubmit={create}><h3>Create a challenge</h3><label>Name<input value={name} onChange={(e) => setName(e.target.value)} required placeholder="2027" /></label><div className="inline-form"><label>Start<input type="date" value={start} onChange={(e) => setStart(e.target.value)} required /></label><label>End<input type="date" value={end} onChange={(e) => setEnd(e.target.value)} required /></label></div><button className="primary">Create challenge</button></form></section><section className="panel"><h2>Account</h2><p className="muted">{user.display_name} · {user.timezone}</p><button className="quiet" onClick={onLogout}>Log out</button></section></section>; }
 
 export function App() {
-  const [user, setUser] = useState<User | null | undefined>(undefined); const [today, setToday] = useState<Today | null>(null); const [session, setSession] = useState<Session | null>(null); const [areas, setAreas] = useState<Area[]>([]); const [metrics, setMetrics] = useState<Metrics | null>(null); const [roadmaps, setRoadmaps] = useState<Roadmap[]>([]); const [challenges, setChallenges] = useState<Challenge[]>([]); const [view, setView] = useState<View>("home"); const [period, setPeriod] = useState("30d");
-  async function load() { try { const me = await api<User>("/me"); setUser(me); const [day, active, areaList, mapList, challengeList, numbers] = await Promise.all([api<Today>("/daily-plans/today"), api<Session | null>("/sessions/active"), api<Area[]>("/areas"), api<Roadmap[]>("/roadmaps"), api<Challenge[]>("/challenges"), api<Metrics>(`/analytics/metrics?period=${period}`)]); setToday(day); setSession(active); setAreas(areaList); setRoadmaps(mapList); setChallenges(challengeList); setMetrics(numbers); } catch { setUser(null); } }
-  // The period is the only user-controlled input to the initial data loader.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { load(); }, [period]);
-  if (user === undefined) return <main className="loading" role="status">Loading CharityOS…</main>; if (!user) return <Login onLogin={(next) => { setUser(next); load(); }} />;
-  async function action(id: string, name: "complete" | "skip" | "reopen") { await api(`/tasks/${id}/${name}`, { method: "POST" }); load(); }
-  async function startFocus(task?: Task) { const area = task?.area ?? areas[0]?.id; if (!area) return; await api("/sessions/start", { method: "POST", body: JSON.stringify({ id: crypto.randomUUID(), title: task?.title ?? "Focus block", area, task: task?.id, is_deep_work: task?.is_deep_work_default ?? true }) }); setView("home"); load(); }
-  const content = view === "home" ? <><header><p className="eyebrow">TODAY</p><h1>Good day.</h1><p className="muted">{new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" }).format(new Date())}</p></header>{today && <ChallengeBadge challenge={today.challenge} />}{session && <Timer session={session} refresh={load} onFinish={load} />}{today && <TodayView today={today} areas={areas} onRefresh={load} onFocus={startFocus} onAction={action} />}</> : view === "today" ? today && <TodayView today={today} areas={areas} onRefresh={load} onFocus={startFocus} onAction={action} /> : view === "roadmap" ? <RoadmapView roadmaps={roadmaps} refreshToday={load} onFocus={startFocus} /> : view === "insights" && metrics ? <Insights metrics={metrics} setPeriod={setPeriod} /> : view === "health" ? <Health user={user} /> : view === "reflect" ? <Reflect /> : view === "history" ? <History /> : view === "more" ? <More user={user} challenges={challenges} reload={load} onLogout={async () => { await api("/auth/logout", { method: "POST" }); setUser(null); }} /> : <Reflect />;
-  return <div className="app-shell"><main className="content">{content}</main><nav aria-label="Primary"><button className={view === "home" ? "active" : ""} onClick={() => setView("home")}><span>⌂</span>Home</button><button className={view === "roadmap" ? "active" : ""} onClick={() => setView("roadmap")}><span>◇</span>Roadmap</button><button className={view === "today" ? "active" : ""} onClick={() => setView("today")}><span>✓</span>Today</button><button className={view === "insights" ? "active" : ""} onClick={() => setView("insights")}><span>↗</span>Insights</button><button className={view === "health" ? "active" : ""} onClick={() => setView("health")}><span>♡</span>Health</button><button className={view === "reflect" ? "active" : ""} onClick={() => setView("reflect")}><span>✦</span>Reflect</button><button className={view === "history" ? "active" : ""} onClick={() => setView("history")}><span>◷</span>History</button><button className={view === "more" ? "active" : ""} onClick={() => setView("more")}><span>○</span>More</button></nav></div>;
+  const [user, setUser] = useState<User | null | undefined>(undefined);
+  const [bootError, setBootError] = useState("");
+
+  const boot = useCallback(async () => {
+    setBootError("");
+    try {
+      setUser(await api<User>("/me"));
+    } catch (err) {
+      if (err instanceof ApiError && err.offline) setBootError(err.message);
+      else setUser(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    boot();
+  }, [boot]);
+
+  if (bootError) {
+    return (
+      <main className="loading" role="alert">
+        <Icon name="offline" size={32} />
+        <p>{bootError}</p>
+        <button type="button" className="button" onClick={boot}>Try again</button>
+      </main>
+    );
+  }
+  if (user === undefined) return <main className="loading" role="status">Loading CharityOS…</main>;
+  if (!user) return <Login onLogin={setUser} />;
+  return <Shell user={user} setUser={setUser} />;
+}
+
+function Shell({ user, setUser }: { user: User; setUser: (user: User | null) => void }) {
+  const route = useHashRoute();
+  const tab = tabOf(route);
+  const online = useOnline();
+  const [allAreas, setAllAreas] = useState<Area[]>([]);
+  const [prefs, setPrefs] = useState<Preferences>(DEFAULT_PREFS);
+  const [session, setSession] = useState<AppContextValue["session"]>(null);
+  const [dataVersion, setDataVersion] = useState(0);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [quickAdd, setQuickAdd] = useState<QuickAddDefaults | null>(null);
+  const [entrySheet, setEntrySheet] = useState<{ id: string; mode: EntrySheetMode; key: number } | null>(null);
+  const [celebration, setCelebration] = useState<{ title: string; detail?: string; key: number } | null>(null);
+  const [today, setToday] = useState(() => todayIn(user.timezone));
+  const toastId = useRef(0);
+
+  useEffect(() => {
+    setToday(todayIn(user.timezone));
+    const timer = window.setInterval(() => setToday(todayIn(user.timezone)), 60_000);
+    return () => window.clearInterval(timer);
+  }, [user.timezone]);
+
+  const toast = useCallback((message: string, kind: ToastKind = "info") => {
+    toastId.current += 1;
+    const id = toastId.current;
+    setToasts([{ id, message, kind }]);
+    window.setTimeout(() => setToasts((items) => items.filter((item) => item.id !== id)), kind === "error" ? 6000 : 2800);
+  }, []);
+
+  const reloadAreas = useCallback(async () => {
+    setAllAreas(await api<Area[]>("/areas"));
+  }, []);
+
+  useEffect(() => {
+    reloadAreas().catch(() => toast("Could not load categories", "error"));
+    api<Preferences>("/preferences").then(setPrefs).catch(() => undefined);
+  }, [reloadAreas, toast]);
+
+  useEffect(() => {
+    api<Session & { schedule_entry?: string | null }>("/sessions/active")
+      .then((value) => setSession(value ?? null))
+      .catch(() => undefined);
+  }, [dataVersion]);
+
+  // Refresh when the app returns to the foreground; the server may have moved on.
+  useEffect(() => {
+    const onVisible = () => document.visibilityState === "visible" && setDataVersion((value) => value + 1);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("online", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("online", onVisible);
+    };
+  }, []);
+
+  // Shortcut from the manifest: /#/today?add=1 opens quick add.
+  useEffect(() => {
+    if (route.params.get("add") === "1") {
+      setQuickAdd({});
+      navigate(`#/${route.path.join("/")}`);
+    }
+  }, [route]);
+
+  const areas = useMemo(() => allAreas.filter((area) => !area.archived_at), [allAreas]);
+
+  const value: AppContextValue = useMemo(
+    () => ({
+      user,
+      areas,
+      allAreas,
+      prefs,
+      session,
+      dataVersion,
+      online,
+      today,
+      refresh: () => setDataVersion((value) => value + 1),
+      reloadAreas,
+      setPrefs,
+      setUser,
+      toast,
+      celebrate: (title, detail) => {
+        if (!prefs.celebrations_enabled) {
+          toast(`Done: ${title}`, "success");
+          return;
+        }
+        setCelebration({ title, detail, key: Date.now() });
+        window.setTimeout(() => setCelebration(null), 2600);
+      },
+      openQuickAdd: (defaults = {}) => setQuickAdd(defaults),
+      openEntry: (entry, mode = "view") =>
+        setEntrySheet({ id: typeof entry === "string" ? entry : entry.id, mode, key: Date.now() }),
+      navigate,
+      logout: async () => {
+        await post("/auth/logout").catch(() => undefined);
+        setUser(null);
+      },
+    }),
+    [user, areas, allAreas, prefs, session, dataVersion, online, today, reloadAreas, setUser, toast],
+  );
+
+  const screen =
+    tab === "roadmaps" ? (
+      <RoadmapsScreen />
+    ) : tab === "profile" ? (
+      <ProfileScreen route={route} />
+    ) : (
+      <TodayScreen key={prefs.default_today_view} />
+    );
+
+  return (
+    <AppContext.Provider value={value}>
+      <div className="app-shell">
+        <a className="skip-link" href="#main">Skip to content</a>
+        {!online && (
+          <div className="offline-banner" role="status">
+            <Icon name="offline" size={18} /> Offline. You can look around; changes need a connection.
+          </div>
+        )}
+        <main id="main" className="content" tabIndex={-1}>
+          {screen}
+        </main>
+        <button
+          type="button"
+          className="fab"
+          onClick={() => setQuickAdd({ date: today })}
+          aria-label="Quick add activity"
+        >
+          <Icon name="plus" size={26} />
+        </button>
+        <nav className="bottom-nav" aria-label="Primary">
+          {NAV.map((item) => (
+            <a key={item.tab} href={`#/${item.tab}`} className={tab === item.tab ? "active" : ""} aria-current={tab === item.tab ? "page" : undefined}>
+              <Icon name={item.icon} />
+              <span>{item.label}</span>
+            </a>
+          ))}
+        </nav>
+        <div className="toasts" aria-live="polite" aria-atomic="false">
+          {toasts.map((item) => (
+            <p key={item.id} className={`toast ${item.kind}`} role={item.kind === "error" ? "alert" : undefined}>
+              {item.message}
+            </p>
+          ))}
+        </div>
+        {celebration && (
+          <div className="celebration" key={celebration.key} role="status" aria-live="polite">
+            <div className="celebration-card">
+              <span className="celebration-mark" aria-hidden="true"><Icon name="check" size={30} /></span>
+              <b>Nice work</b>
+              <span>{celebration.title}</span>
+              {celebration.detail && <small>{celebration.detail}</small>}
+            </div>
+          </div>
+        )}
+        {quickAdd && <QuickAddSheet defaults={quickAdd} onClose={() => setQuickAdd(null)} />}
+        {entrySheet && (
+          <EntrySheet key={entrySheet.key} entryId={entrySheet.id} initialMode={entrySheet.mode} onClose={() => setEntrySheet(null)} />
+        )}
+      </div>
+    </AppContext.Provider>
+  );
 }
