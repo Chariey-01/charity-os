@@ -54,3 +54,55 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return self.email
+
+
+class UserPreferences(models.Model):
+    """Per-user scheduler, reminder and motivation settings."""
+
+    class TodayView(models.TextChoices):
+        AGENDA = "agenda", "Agenda"
+        TIMELINE = "timeline", "Timeline"
+        DAY = "day", "Day"
+
+    user = models.OneToOneField(
+        User, on_delete=models.CASCADE, primary_key=True, related_name="preferences"
+    )
+    reminders_enabled = models.BooleanField(default=False)
+    reminder_lead_minutes = models.PositiveSmallIntegerField(
+        default=10, validators=[MaxValueValidator(120)]
+    )
+    start_reminders_enabled = models.BooleanField(default=True)
+    daily_planning_reminder_enabled = models.BooleanField(default=False)
+    daily_planning_time = models.TimeField(default="07:30")
+    weekly_review_reminder_enabled = models.BooleanField(default=False)
+    weekly_review_weekday = models.PositiveSmallIntegerField(
+        default=7, validators=[MinValueValidator(1), MaxValueValidator(7)]
+    )
+    weekly_review_time = models.TimeField(default="18:00")
+    show_streaks = models.BooleanField(default=False)
+    celebrations_enabled = models.BooleanField(default=True)
+    default_today_view = models.CharField(
+        max_length=10, choices=TodayView.choices, default=TodayView.AGENDA
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(reminder_lead_minutes__lte=120),
+                name="users_prefs_lead_minutes_valid",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(weekly_review_weekday__range=(1, 7)),
+                name="users_prefs_weekday_valid",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    default_today_view__in=("agenda", "timeline", "day")
+                ),
+                name="users_prefs_today_view_valid",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Preferences for {self.user_id}"

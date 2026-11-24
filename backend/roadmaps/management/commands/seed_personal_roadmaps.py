@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from django.utils.text import slugify
 
 from planning.models import Area
 from roadmaps.models import Roadmap, RoadmapNode, RoadmapResource
@@ -570,6 +571,15 @@ class Command(BaseCommand):
         user = User.objects.filter(email__iexact=options["email"]).first()
         if not user:
             raise CommandError("User not found; create a user first.")
+        area_names = {definition["area"] for definition in ROADMAPS}
+        areas = {
+            name: Area.objects.get_or_create(
+                user=user,
+                name=name,
+                defaults={"slug": slugify(name), "color": "#527B68"},
+            )[0]
+            for name in area_names
+        }
         created = skipped = nodes = 0
         for definition in ROADMAPS:
             roadmap, made = Roadmap.objects.get_or_create(
@@ -578,9 +588,7 @@ class Command(BaseCommand):
                 defaults={
                     "description": definition["description"],
                     "status": Roadmap.Status.ACTIVE,
-                    "area": Area.objects.filter(
-                        user=user, name=definition["area"]
-                    ).first(),
+                    "area": areas[definition["area"]],
                 },
             )
             if not made:
