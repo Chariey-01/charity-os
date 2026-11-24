@@ -2,6 +2,7 @@ from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
+from django.db import transaction
 from rest_framework import serializers
 
 from challenges.models import Challenge
@@ -14,6 +15,7 @@ from health.models import (
     SleepLog,
 )
 from planning.models import Area, DailyCapacity, DailyPlan, DailyPlanItem, Task
+from planning.services import transition_task
 from records.models import Accomplishment, Evidence
 from reflections.models import DailyReflection, WeeklyReview
 from roadmaps.models import (
@@ -54,7 +56,57 @@ DailyPlanSerializer = serializer_for(DailyPlan)
 DailyPlanItemSerializer = serializer_for(
     DailyPlanItem, read_only=("title_snapshot", "area_label_snapshot")
 )
-TaskSerializer = serializer_for(Task, read_only=("completed_at", "skipped_at"))
+
+
+class TaskSerializer(OwnedModelSerializer):
+    """Tasks with every status change routed through transition_task.
+
+    Accepts workflow statuses and the legacy planned/completed/skipped
+    input values. ``legacy_status`` is deprecated and kept for one
+    release (docs/project-workspaces-design.md §13).
+    """
+
+    status = serializers.CharField(required=False)
+    legacy_status = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Task
+        fields = "__all__"
+        read_only_fields = ("user", "completed_at", "cancelled_at")
+
+    LEGACY_OUTPUT = {"done": "completed", "cancelled": "skipped"}
+
+    def get_legacy_status(self, obj):
+        return self.LEGACY_OUTPUT.get(obj.status, "planned")
+
+    def validate_status(self, value):
+        value = Task.LEGACY_TO_STATUS.get(value, value)
+        if value not in Task.Status.values:
+            raise serializers.ValidationError(f"Unknown task status: {value}.")
+        return value
+
+    @transaction.atomic
+    def create(self, validated_data):
+        status = validated_data.pop("status", Task.Status.TODO)
+        open_status = status if status in Task.OPEN_STATUSES else Task.Status.TODO
+        task = super().create({**validated_data, "status": open_status})
+        if status != open_status:
+            task = transition_task(
+                user=self.context["request"].user, task=task, target=status
+            )
+        return task
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        status = validated_data.pop("status", None)
+        task = super().update(instance, validated_data)
+        if status is not None and status != task.status:
+            task = transition_task(
+                user=self.context["request"].user, task=task, target=status
+            )
+        return task
+
+
 RoadmapSerializer = serializer_for(Roadmap)
 
 

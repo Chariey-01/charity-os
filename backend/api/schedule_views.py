@@ -423,7 +423,7 @@ def _unscheduled_tasks(user, local_date):
     kinds = {item.task_id: item.kind for item in today_items}
     tasks = (
         Task.objects.filter(
-            user=user, status=Task.Status.PLANNED, archived_at__isnull=True
+            user=user, status__in=Task.OPEN_STATUSES, archived_at__isnull=True
         )
         .exclude(pk__in=open_entry_tasks)
         .select_related("area")

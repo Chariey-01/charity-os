@@ -40,7 +40,7 @@ export function RoadmapsScreen() {
 
   async function addToToday(node: RoadmapNode, focus = false) {
     try {
-      const task = await post<Task>("/tasks", { title: node.title, roadmap_item: node.id, status: "planned", is_deep_work_default: true });
+      const task = await post<Task>("/tasks", { title: node.title, roadmap_item: node.id, is_deep_work_default: true });
       const today = await api<{ plan: { id: string } }>("/daily-plans/today");
       await post("/daily-plan-items", { plan: today.plan.id, task: task.id, kind: "secondary", position: 99 });
       setMessage("Added to Today's unscheduled tasks");

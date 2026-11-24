@@ -65,7 +65,7 @@ def next_actions(user, limit=5):
         ):
             continue
         tasks = list(
-            node.tasks.filter(status=Task.Status.PLANNED).order_by(
+            node.tasks.filter(status__in=Task.OPEN_STATUSES).order_by(
                 "-priority", "created_at"
             )
         )

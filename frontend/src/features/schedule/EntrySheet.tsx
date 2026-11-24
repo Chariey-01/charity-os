@@ -15,6 +15,7 @@ import {
   localRange,
   minutesToHHMM,
 } from "../../lib/time";
+import { isTaskDone, isTaskOpen } from "../../lib/taskStatus";
 import type { Entry } from "../../lib/types";
 import { useLiveSeconds } from "./hooks";
 
@@ -130,7 +131,7 @@ function EntryDetail({
           {entry.actual_seconds !== null && ` of ${durationLabel(entry.planned_minutes)} planned`}
         </p>
       )}
-      {entry.task_title && <p className="linked">Task: {entry.task_title}{entry.task_status === "completed" ? " ✓" : ""}</p>}
+      {entry.task_title && <p className="linked">Task: {entry.task_title}{isTaskDone(entry.task_status) ? " ✓" : ""}</p>}
       {entry.roadmap_node_title && <p className="linked">Roadmap: {entry.roadmap_node_title}</p>}
       {entry.outcome && <p className="note"><b>Outcome</b> {entry.outcome}</p>}
       {entry.notes && <p className="note"><b>Notes</b> {entry.notes}</p>}
@@ -293,7 +294,7 @@ function FinishForm({
         <input type="checkbox" checked={partial} onChange={(event) => setPartial(event.target.checked)} />
         Only partly done
       </label>
-      {entry.task && entry.task_status === "planned" && (
+      {entry.task && isTaskOpen(entry.task_status) && (
         <label className="check-row">
           <input type="checkbox" checked={completeTask} onChange={(event) => setCompleteTask(event.target.checked)} />
           Also mark the task “{entry.task_title}” complete

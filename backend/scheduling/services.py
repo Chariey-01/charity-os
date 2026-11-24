@@ -447,8 +447,8 @@ def complete_entry(
     _save(entry, *fields)
     if complete_task and entry.task_id:
         task = Task.objects.get(pk=entry.task_id, user=user)
-        if task.status == Task.Status.PLANNED:
-            transition_task(user=user, task=task, target=Task.Status.COMPLETED)
+        if task.status in Task.OPEN_STATUSES:
+            transition_task(user=user, task=task, target=Task.Status.DONE)
     return entry
 
 

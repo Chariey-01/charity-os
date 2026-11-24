@@ -8,6 +8,7 @@ import { canNotify, notificationPermission, requestNotificationPermission } from
 import { actualLabel, addDays, deviceTimezone, durationLabel, instantFrom, weekStart } from "../../lib/time";
 import type { Area, Challenge, Preferences, Task, User } from "../../lib/types";
 import { useInstallPrompt } from "../../lib/pwa";
+import { isTaskDone } from "../../lib/taskStatus";
 
 const SUBPAGES: Record<string, string> = {
   categories: "Categories",
@@ -559,7 +560,7 @@ function History() {
     ])
       .then(([tasks, sessions, evidence, wins, reflections]) =>
         setEntries([
-          ...tasks.filter((task) => task.status === "completed").map((task) => ({ kind: "Completed task", title: task.title, detail: "" })),
+          ...tasks.filter((task) => isTaskDone(task.status)).map((task) => ({ kind: "Completed task", title: task.title, detail: "" })),
           ...sessions
             .filter((session) => session.status === "completed")
             .map((session) => ({ kind: "Focus", title: session.title, detail: `${actualLabel(session.duration_seconds ?? 0)}${session.outcome ? ` · ${session.outcome}` : ""}` })),

@@ -163,3 +163,31 @@ test("a version conflict reloads the activity and explains why", async () => {
   fireEvent.click(within(dialog).getByRole("button", { name: "Start" }));
   expect(await within(dialog).findByRole("alert")).toHaveTextContent(/another device/);
 });
+
+test.each(["todo", "in_progress", "planned"])("an open linked task (%s) can be completed with the activity", async (taskStatus) => {
+  const linked = entry({ id: "e6", title: "Write essay", task: "t1", task_title: "Essay draft", task_status: taskStatus });
+  const api = mockApi({
+    "/schedule/day": day([linked]),
+    "/schedule-entries/e6": linked,
+    "POST /schedule-entries/e6/complete": { ...linked, status: "completed", task_status: "done", version: 2 },
+  });
+  render(<App />);
+  const dialog = await openSheet("Write essay");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Mark done" }));
+  const form = await screen.findByRole("dialog", { name: "Finish activity" });
+  fireEvent.click(within(form).getByRole("checkbox", { name: /Also mark the task “Essay draft” complete/ }));
+  fireEvent.click(within(form).getByRole("button", { name: "Complete" }));
+  await waitFor(() => expect(api.writes()).toHaveLength(1));
+  expect(api.writes()[0].body).toMatchObject({ complete_task: true });
+});
+
+test.each(["done", "completed"])("a finished linked task (%s) is marked and not offered again", async (taskStatus) => {
+  const linked = entry({ id: "e7", title: "Write essay", task: "t1", task_title: "Essay draft", task_status: taskStatus });
+  mockApi({ "/schedule/day": day([linked]), "/schedule-entries/e7": linked });
+  render(<App />);
+  const dialog = await openSheet("Write essay");
+  expect(within(dialog).getByText("Task: Essay draft ✓")).toBeInTheDocument();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Mark done" }));
+  const form = await screen.findByRole("dialog", { name: "Finish activity" });
+  expect(within(form).queryByRole("checkbox", { name: /Also mark the task/ })).not.toBeInTheDocument();
+});

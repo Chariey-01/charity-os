@@ -69,3 +69,12 @@ test("chart ticks are rounded", () => {
   expect(niceTicks(95)).toEqual([0, 50, 100]);
   expect(niceTicks(3)).toEqual([0, 1, 2, 3]);
 });
+
+test("task status helpers accept workflow and legacy values", async () => {
+  const { isTaskDone, isTaskOpen } = await import("./taskStatus");
+  for (const status of ["planned", "backlog", "todo", "in_progress", "in_review", "blocked"]) expect(isTaskOpen(status)).toBe(true);
+  for (const status of ["done", "completed", "cancelled", "skipped", null, undefined]) expect(isTaskOpen(status)).toBe(false);
+  expect(isTaskDone("done")).toBe(true);
+  expect(isTaskDone("completed")).toBe(true);
+  expect(isTaskDone("cancelled")).toBe(false);
+});

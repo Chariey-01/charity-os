@@ -345,7 +345,7 @@ class TaskViewSet(OwnedViewSet):
         return Response(
             self.get_serializer(
                 transition_task(
-                    user=request.user, task=self.get_object(), target="completed"
+                    user=request.user, task=self.get_object(), target=Task.Status.DONE
                 )
             ).data
         )
@@ -355,17 +355,32 @@ class TaskViewSet(OwnedViewSet):
         return Response(
             self.get_serializer(
                 transition_task(
-                    user=request.user, task=self.get_object(), target="skipped"
+                    user=request.user,
+                    task=self.get_object(),
+                    target=Task.Status.CANCELLED,
                 )
             ).data
         )
+
+    @action(detail=True, methods=["post"])
+    def transition(self, request, pk=None):
+        target = request.data.get("status")
+        if not target:
+            raise serializers.ValidationError({"status": "This field is required."})
+        task = transition_task(
+            user=request.user,
+            task=self.get_object(),
+            target=target,
+            reason=str(request.data.get("reason", "") or ""),
+        )
+        return Response(self.get_serializer(task).data)
 
     @action(detail=True, methods=["post"])
     def reopen(self, request, pk=None):
         return Response(
             self.get_serializer(
                 transition_task(
-                    user=request.user, task=self.get_object(), target="planned"
+                    user=request.user, task=self.get_object(), target=Task.Status.TODO
                 )
             ).data
         )
@@ -564,7 +579,7 @@ def metrics(request):
     appearances = DailyPlanItem.objects.filter(user=request.user).exclude(
         state="removed"
     )
-    completed = appearances.filter(task__status="completed").count()
+    completed = appearances.filter(task__status=Task.Status.DONE).count()
 
     def in_range(value):
         return start <= value <= end
@@ -590,7 +605,7 @@ def metrics(request):
         if in_range(item.plan.local_date):
             key = str(item.plan.local_date)
             planned_by_day[key] += 1
-            if item.task.status == Task.Status.COMPLETED:
+            if item.task.status == Task.Status.DONE:
                 completed_by_day[key] += 1
     sleep_by_day = defaultdict(float)
     for sleep in SleepLog.objects.filter(user=request.user):
