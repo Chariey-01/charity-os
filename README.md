@@ -38,7 +38,7 @@ Create the first local account without storing a password in source control:
 (cd backend && ../.venv/bin/python manage.py bootstrap_charityos --email you@example.com --timezone Africa/Nairobi)
 ```
 
-The command prompts securely, then creates a 96-day primary challenge and default categories (areas), including the scheduler's Social, Learning, Sleep and Custom categories with colours. Existing accounts receive any missing default categories through migration `planning.0006`; it never renames, recolours a chosen colour, or unarchives anything. **Profile → Categories → Restore any missing default categories** does the same on demand.
+The command prompts securely, then creates a 96-day primary challenge and default categories (areas), including the scheduler's Social, Learning, Sleep and Custom categories with colours. Existing accounts receive any missing default categories through migration `planning.0006`; it never renames, recolours a chosen colour, unarchives, or re-creates a default you archived. **Profile → Categories → Restore any missing default categories** does the same on demand.
 
 After the account exists, seed the personal development tracks from the roadmap polish pass:
 

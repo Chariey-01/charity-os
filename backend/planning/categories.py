@@ -44,17 +44,19 @@ def ensure_default_categories(user, area_model=None):
     """Create missing default categories for ``user``; never overwrite choices.
 
     Existing areas with a default name keep their name, order and archive
-    state. They only receive the default colour if their colour was never set
-    and the default health kind if none was chosen. Returns the created rows.
+    state. An archived default stays archived and is not re-created: the user
+    chose to remove it. Active ones only receive the default colour if their
+    colour was never set and the default health kind if none was chosen.
+    Returns the created rows.
     """
     Area = area_model
     if Area is None:
         from .models import Area
     with transaction.atomic():
         areas = list(Area.objects.select_for_update().filter(user=user))
-        by_name = {
-            area.name.lower(): area for area in areas if area.archived_at is None
-        }
+        by_name = {}
+        for area in sorted(areas, key=lambda row: row.archived_at is None):
+            by_name[area.name.lower()] = area  # active rows win over archived
         slugs = {area.slug for area in areas}
         next_order = max((area.sort_order for area in areas), default=-1) + 1
         created = []
@@ -72,6 +74,8 @@ def ensure_default_categories(user, area_model=None):
                     )
                 )
                 next_order += 1
+                continue
+            if area.archived_at is not None:
                 continue
             changed = []
             if area.color.upper() == UNSET_COLOR:
