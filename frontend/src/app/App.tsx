@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Icon } from "../components/ui";
+import { FocusBar } from "../features/focus/FocusBar";
 import { ProfileScreen } from "../features/profile/ProfileScreen";
 import { RoadmapsScreen } from "../features/roadmaps/RoadmapsScreen";
 import { EntrySheet } from "../features/schedule/EntrySheet";
@@ -226,7 +227,7 @@ function Shell({ user, setUser }: { user: User; setUser: (user: User | null) => 
 
   return (
     <AppContext.Provider value={value}>
-      <div className="app-shell">
+      <div className={`app-shell ${session && !(tab === "today" && session.schedule_entry) ? "has-focus" : ""}`}>
         <a className="skip-link" href="#main">Skip to content</a>
         {!online && (
           <div className="offline-banner" role="status">
@@ -236,6 +237,7 @@ function Shell({ user, setUser }: { user: User; setUser: (user: User | null) => 
         <main id="main" className="content" tabIndex={-1}>
           {screen}
         </main>
+        {!(tab === "today" && session?.schedule_entry) && <FocusBar />}
         <button
           type="button"
           className="fab"

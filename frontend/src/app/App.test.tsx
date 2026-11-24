@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
 import { json, mockApi } from "../test/mockApi";
-import { App } from "./App";
+import { App, elapsedSeconds } from "./App";
 
 test("shows login when unauthenticated", async () => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(json({ detail: "Authentication credentials were not provided." }, 403));
@@ -15,6 +15,28 @@ test("shows an offline state instead of the login form when the server is unreac
   render(<App />);
   expect(await screen.findByRole("alert")).toHaveTextContent(/offline/i);
   expect(screen.queryByRole("button", { name: "Sign in" })).not.toBeInTheDocument();
+});
+
+test("paused focus session uses the backend elapsed duration", async () => {
+  const start = new Date(Date.now() - 125_000).toISOString();
+  expect(elapsedSeconds(start)).toBeGreaterThanOrEqual(124);
+  window.location.hash = "#/schedule";
+  mockApi({
+    "/sessions/active": { id: "s1", title: "Deep build", status: "paused", started_at: start, version: 2, elapsed_seconds: 42, area: "a-learn", schedule_entry: null },
+  });
+  render(<App />);
+  const bar = await screen.findByRole("region", { name: "Focus session" });
+  expect(within(bar).getByText("Deep build")).toBeInTheDocument();
+  expect(screen.getByTestId("elapsed-timer")).toHaveTextContent("00:00:42");
+  expect(within(bar).getByRole("button", { name: "Resume focus" })).toBeInTheDocument();
+});
+
+test("an empty /sessions/active body means no session (DRF renders None as empty)", async () => {
+  window.location.hash = "#/schedule";
+  mockApi();
+  render(<App />);
+  await screen.findByRole("tablist", { name: "Calendar view" });
+  expect(screen.queryByRole("region", { name: "Focus session" })).not.toBeInTheDocument();
 });
 
 test("renders nested roadmap and next actions", async () => {
