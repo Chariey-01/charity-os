@@ -4,6 +4,7 @@ from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
 from django.contrib.auth import authenticate, login, logout
+from django.db import transaction
 from django.db.models import Sum
 from django.middleware.csrf import get_token
 from django.utils import timezone
@@ -39,6 +40,7 @@ from roadmaps.models import (
     RoadmapResource,
 )
 from roadmaps.services import next_actions, roadmap_tree
+from scheduling.services import sync_entry_from_session
 
 from . import serializers as s
 
@@ -192,6 +194,15 @@ class ChallengeViewSet(
 
 
 AreaViewSet = owned_viewset("AreaViewSet", Area, s.AreaSerializer)
+
+
+class AreaViewSet(AreaViewSet):
+    def get_queryset(self):
+        return self.queryset.filter(user=self.request.user).order_by(
+            "sort_order", "name"
+        )
+
+
 CapacityViewSet = owned_viewset(
     "CapacityViewSet", DailyCapacity, s.DailyCapacitySerializer
 )
@@ -245,7 +256,9 @@ class DailyPlanViewSet(DailyPlanViewSet):
             local_date = (
                 date.fromisoformat(requested)
                 if requested
-                else timezone.localtime().date()
+                else timezone.localtime(
+                    timezone.now(), ZoneInfo(request.user.timezone)
+                ).date()
             )
         except ValueError as exc:
             raise serializers.ValidationError({"date": "Use YYYY-MM-DD."}) from exc
@@ -440,43 +453,51 @@ class SessionViewSet(OwnedViewSet):
             raise serializers.ValidationError(
                 {"id": "A pause id is required."}
             ) from exc
-        obj = pause_session(
-            user=request.user,
-            session_id=pk,
-            pause_id=pause_id,
-            expected_version=request.data.get("expected_version"),
-        )
+        with transaction.atomic():
+            obj = pause_session(
+                user=request.user,
+                session_id=pk,
+                pause_id=pause_id,
+                expected_version=request.data.get("expected_version"),
+            )
+            sync_entry_from_session(user=request.user, session=obj)
         return Response(self.get_serializer(obj).data)
 
     @action(detail=True, methods=["post"])
     def resume(self, request, pk=None):
-        obj = resume_session(
-            user=request.user,
-            session_id=pk,
-            expected_version=request.data.get("expected_version"),
-        )
+        with transaction.atomic():
+            obj = resume_session(
+                user=request.user,
+                session_id=pk,
+                expected_version=request.data.get("expected_version"),
+            )
+            sync_entry_from_session(user=request.user, session=obj)
         return Response(self.get_serializer(obj).data)
 
     @action(detail=True, methods=["post"])
     def finish(self, request, pk=None):
-        obj = end_session(
-            user=request.user,
-            session_id=pk,
-            target="completed",
-            expected_version=request.data.get("expected_version"),
-            outcome=request.data.get("outcome", ""),
-            learning=request.data.get("learning", ""),
-        )
+        with transaction.atomic():
+            obj = end_session(
+                user=request.user,
+                session_id=pk,
+                target="completed",
+                expected_version=request.data.get("expected_version"),
+                outcome=request.data.get("outcome", ""),
+                learning=request.data.get("learning", ""),
+            )
+            sync_entry_from_session(user=request.user, session=obj)
         return Response(self.get_serializer(obj).data)
 
     @action(detail=True, methods=["post"])
     def cancel(self, request, pk=None):
-        obj = end_session(
-            user=request.user,
-            session_id=pk,
-            target="cancelled",
-            expected_version=request.data.get("expected_version"),
-        )
+        with transaction.atomic():
+            obj = end_session(
+                user=request.user,
+                session_id=pk,
+                target="cancelled",
+                expected_version=request.data.get("expected_version"),
+            )
+            sync_entry_from_session(user=request.user, session=obj)
         return Response(self.get_serializer(obj).data)
 
     @action(detail=True, methods=["post"])
