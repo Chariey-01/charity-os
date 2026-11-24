@@ -102,3 +102,27 @@ Health-log and reflection DELETE operations are explicit permanent deletion. Acc
 ## Deferred contract surface
 
 No endpoints are defined for life modes, recurrence, upload intents/files/images/photos, offline mutation replay, JWT refresh, report snapshots/exports, or object storage. Search remains a capability, but v0.1 does not promise full-text ranking/index semantics.
+
+## Scheduler endpoints (implemented)
+
+All are owner-scoped, session-authenticated and CSRF-protected. Domain errors return `{"detail", "error": {"code", "message", "fields"}}`: 400 for validation, 404 for another user's or a missing record, 409 for `version_conflict` and `schedule_overlap` (which also lists `conflicts`).
+
+```text
+GET   /schedule-entries?start=YYYY-MM-DD&end=YYYY-MM-DD[&include=all]   overlap with local days, max 93 days
+POST  /schedule-entries        {id?, title, start_local, end_local, timezone_name?, area?, task?, roadmap_node?, tracking?, notes?, allow_overlap?}
+GET   /schedule-entries/{id}
+PATCH /schedule-entries/{id}   {expected_version?, allow_overlap?, title?, area?, notes?, outcome?, tracking?, start_local?, end_local?, timezone_name?}
+POST  /schedule-entries/{id}/start      {expected_version?, session_id?}
+POST  /schedule-entries/{id}/pause      {expected_version?, pause_id?}
+POST  /schedule-entries/{id}/resume     {expected_version?}
+POST  /schedule-entries/{id}/complete   {partial?, outcome?, learning?, notes?, actual_minutes? | actual_started_at?+actual_ended_at?, complete_task?, expected_version?}
+POST  /schedule-entries/{id}/skip       {note?, expected_version?}
+POST  /schedule-entries/{id}/cancel     {note?, expected_version?}
+POST  /schedule-entries/{id}/reschedule {id?, start_local, end_local, timezone_name?, allow_overlap?, expected_version?} → {original, entry}
+GET   /schedule/day?date=YYYY-MM-DD
+GET   /insights?period=7d|30d|90d|challenge|year|all
+GET   /preferences    PATCH /preferences
+POST  /areas/ensure-defaults
+```
+
+`start_local`/`end_local` are wall-clock times without an offset, interpreted in `timezone_name` (default: the user's). Entries cannot be deleted; cancel them instead. `/sessions/*` endpoints keep a linked entry in sync, and focus sessions now include `schedule_entry`.

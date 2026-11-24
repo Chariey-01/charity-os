@@ -2,6 +2,8 @@
 
 CharityOS remains the source of truth for **what** the user intends to do and **why** it matters. A calendar is the source of truth for **when** a block is scheduled. A CharityOS `FocusSession` records **what actually happened**.
 
+> **Update (scheduler phase):** `scheduling.ScheduleEntry` now exists and is the provider-neutral planned block described below as `CalendarBlock`. A future `CalendarLink` should reference a schedule entry rather than introduce a second block model. See [scheduler-design.md](scheduler-design.md).
+
 ## Proposed boundary
 
 - `Task` and `RoadmapNode`: durable work identity and context.

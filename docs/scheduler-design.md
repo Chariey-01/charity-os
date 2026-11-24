@@ -1,6 +1,6 @@
 # Mobile scheduler and life tracker — design
 
-**Status:** Stage A design, implemented on `feature/mobile-scheduler`.
+**Status:** Implemented on `feature/mobile-scheduler`. Acceptance results: [acceptance/README.md](acceptance/README.md).
 
 CharityOS is a permanent personal operating system. Challenges are dated containers inside it. This phase adds a phone-first scheduler that can hold any activity (study, shopping, exercise, sleep, appointments), track what really happened, and report on it without a composite score.
 
@@ -133,3 +133,16 @@ Gamification is derived, never stored: completion celebrations, weekly milestone
 ## 10. Calendar integration path
 
 `ScheduleEntry` is the provider-neutral "planned block" proposed in [calendar-integration.md](calendar-integration.md). A future `CalendarLink(entry, provider_account, external_event_id, revision)` can attach to it without changing its meaning. No OAuth in this phase.
+
+## 11. Known limitations
+
+- **Reminders are foreground-only.** There is no Web Push, so a closed or suspended app cannot remind you. iOS only shows notifications for installed PWAs, and only with permission.
+- **No recurrence.** Repeating activities must be added individually.
+- **No drag-and-drop in the calendar.** Moving uses the Move sheet with nudges (+30 min, +1 hour, Tomorrow, Next week) or explicit date/time fields.
+- **One open focus session per user** (existing constraint). Manual activities can run in parallel; a second focus activity must wait.
+- **Overlap checks cover open entries only.** Completed, skipped and cancelled entries never block a new plan.
+- **Ambiguous DST wall-clock times** (the repeated hour when clocks fall back) resolve to the first occurrence; nonexistent times (spring-forward gap) are rejected.
+- **Timezone changes** do not rewrite existing entries: each keeps the timezone it was planned in, and grouping uses its stored local date.
+- **Offline:** the app shell opens and shows the offline state, but data views need a connection and all changes are disabled offline.
+- **Exercise and sleep de-duplication** compares intervals with health logs. An entry completed with minutes only uses its planned window for that comparison.
+
