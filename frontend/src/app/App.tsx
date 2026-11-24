@@ -11,8 +11,9 @@ import { ScheduleScreen } from "../features/schedule/ScheduleScreen";
 import { TodayScreen } from "../features/today/TodayScreen";
 import { ApiError, api, post } from "../lib/api";
 import { useOnline } from "../lib/pwa";
-import { todayIn } from "../lib/time";
-import type { Area, Preferences, QuickAddDefaults, Session, User } from "../lib/types";
+import { useReminders } from "../lib/reminders";
+import { addDays, todayIn } from "../lib/time";
+import type { Area, Entry, Preferences, QuickAddDefaults, Session, User } from "../lib/types";
 import { AppContext, AppContextValue, EntrySheetMode, ToastKind } from "./context";
 import { navigate, tabOf, useHashRoute } from "./router";
 
@@ -129,6 +130,7 @@ function Shell({ user, setUser }: { user: User; setUser: (user: User | null) => 
   const [quickAdd, setQuickAdd] = useState<QuickAddDefaults | null>(null);
   const [entrySheet, setEntrySheet] = useState<{ id: string; mode: EntrySheetMode; key: number } | null>(null);
   const [celebration, setCelebration] = useState<{ title: string; detail?: string; key: number } | null>(null);
+  const [reminderEntries, setReminderEntries] = useState<Entry[]>([]);
   const [today, setToday] = useState(() => todayIn(user.timezone));
   const toastId = useRef(0);
 
@@ -159,6 +161,15 @@ function Shell({ user, setUser }: { user: User; setUser: (user: User | null) => 
       .then((value) => setSession(value ?? null))
       .catch(() => undefined);
   }, [dataVersion]);
+
+  useEffect(() => {
+    if (!prefs.reminders_enabled) return;
+    api<Entry[]>(`/schedule-entries?start=${today}&end=${addDays(today, 1)}`)
+      .then(setReminderEntries)
+      .catch(() => undefined);
+  }, [prefs.reminders_enabled, today, dataVersion]);
+
+  useReminders(reminderEntries, prefs, today, user.timezone, (reminder) => toast(`${reminder.title}. ${reminder.body}`));
 
   // Refresh when the app returns to the foreground; the server may have moved on.
   useEffect(() => {

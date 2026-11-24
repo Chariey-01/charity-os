@@ -2,13 +2,16 @@ import { FormEvent, useEffect, useState } from "react";
 
 import { useApp } from "../../app/context";
 import { navigate, Route } from "../../app/router";
-import { EmptyState, ErrorState, Icon, Loading, Switch } from "../../components/ui";
+import { CategoryDot, EmptyState, ErrorState, Icon, Loading, Switch } from "../../components/ui";
 import { api, patch, post } from "../../lib/api";
-import { actualLabel, addDays, deviceTimezone, instantFrom, weekStart } from "../../lib/time";
-import type { Challenge, Preferences, Task, User } from "../../lib/types";
+import { canNotify, notificationPermission, requestNotificationPermission } from "../../lib/reminders";
+import { actualLabel, addDays, deviceTimezone, durationLabel, instantFrom, weekStart } from "../../lib/time";
+import type { Area, Challenge, Preferences, Task, User } from "../../lib/types";
 import { useInstallPrompt } from "../../lib/pwa";
 
 const SUBPAGES: Record<string, string> = {
+  categories: "Categories",
+  reminders: "Reminders",
   challenges: "Challenges",
   health: "Health log",
   reflect: "Reflection",
@@ -26,6 +29,8 @@ export function ProfileScreen({ route }: { route: Route }) {
           </button>
           <h1 id="sub-title">{SUBPAGES[sub]}</h1>
         </header>
+        {sub === "categories" && <Categories />}
+        {sub === "reminders" && <Reminders />}
         {sub === "challenges" && <Challenges />}
         {sub === "health" && <HealthLog />}
         {sub === "reflect" && <Reflect />}
@@ -118,6 +123,226 @@ function ProfileHome() {
         Log out
       </button>
     </section>
+  );
+}
+
+const PALETTE = ["#2F6B55", "#3D5A80", "#8C5E2A", "#A0522D", "#6A4C93", "#C2410C", "#65A30D", "#0E7490", "#4338CA", "#B4536A", "#D97706", "#1D4ED8", "#57534E"];
+
+function slugify(value: string) {
+  return value.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "category";
+}
+
+function Categories() {
+  const app = useApp();
+  const [name, setName] = useState("");
+  const [color, setColor] = useState(PALETTE[0]);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [error, setError] = useState("");
+
+  async function run(action: () => Promise<unknown>) {
+    setError("");
+    try {
+      await action();
+      await app.reloadAreas();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save");
+    }
+  }
+
+  const archived = app.allAreas.filter((area) => area.archived_at);
+  return (
+    <>
+      {app.areas.length === 0 && (
+        <EmptyState
+          title="No categories yet"
+          body="Categories colour your schedule and group your insights."
+          action={<button type="button" className="button" onClick={() => run(() => post("/areas/ensure-defaults"))}>Add default categories</button>}
+        />
+      )}
+      <ul className="category-list">
+        {app.areas.map((area) => (
+          <li key={area.id}>
+            {editing === area.id ? (
+              <CategoryEditor area={area} onDone={() => setEditing(null)} run={run} />
+            ) : (
+              <>
+                <CategoryDot color={area.color} />
+                <span className="grow">
+                  {area.name}
+                  {area.health_kind && <small> · feeds {area.health_kind} history</small>}
+                </span>
+                <button type="button" className="text-button" onClick={() => setEditing(area.id)}>Edit</button>
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
+      <form
+        className="panel form"
+        onSubmit={(event: FormEvent) => {
+          event.preventDefault();
+          const base = slugify(name);
+          const taken = new Set(app.allAreas.map((area) => area.slug));
+          let slug = base;
+          for (let index = 2; taken.has(slug); index += 1) slug = `${base}-${index}`;
+          run(() =>
+            post("/areas", { name: name.trim(), slug, color, sort_order: app.allAreas.length }).then(() => setName("")),
+          );
+        }}
+      >
+        <h2 className="panel-title">New category</h2>
+        <label className="field">
+          <span>Name</span>
+          <input value={name} onChange={(event) => setName(event.target.value)} required maxLength={80} />
+        </label>
+        <ColorPicker value={color} onChange={setColor} />
+        {error && <p className="form-error" role="alert">{error}</p>}
+        <button className="button" disabled={!name.trim() || !app.online}>Add category</button>
+      </form>
+      <button type="button" className="text-button" onClick={() => run(() => post("/areas/ensure-defaults"))}>
+        Restore any missing default categories
+      </button>
+      {archived.length > 0 && (
+        <details className="group collapsible">
+          <summary><span className="group-title">Archived</span> <span className="count">{archived.length}</span></summary>
+          <ul className="category-list">
+            {archived.map((area) => (
+              <li key={area.id}>
+                <CategoryDot color={area.color} />
+                <span className="grow">{area.name}</span>
+                <button type="button" className="text-button" onClick={() => run(() => patch(`/areas/${area.id}`, { archived_at: null }))}>Restore</button>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </>
+  );
+}
+
+function ColorPicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <fieldset className="field">
+      <legend>Colour</legend>
+      <div className="swatches" role="radiogroup" aria-label="Colour">
+        {PALETTE.map((swatch) => (
+          <button
+            key={swatch}
+            type="button"
+            role="radio"
+            aria-checked={value.toUpperCase() === swatch.toUpperCase()}
+            aria-label={swatch}
+            className="swatch"
+            style={{ background: swatch }}
+            onClick={() => onChange(swatch)}
+          />
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
+function CategoryEditor({ area, onDone, run }: { area: Area; onDone: () => void; run: (action: () => Promise<unknown>) => Promise<void> }) {
+  const [name, setName] = useState(area.name);
+  const [color, setColor] = useState(area.color);
+  const [health, setHealth] = useState(area.health_kind);
+  return (
+    <form
+      className="category-editor"
+      onSubmit={(event) => {
+        event.preventDefault();
+        run(() => patch(`/areas/${area.id}`, { name, color, health_kind: health })).then(onDone);
+      }}
+    >
+      <label className="field">
+        <span>Name</span>
+        <input value={name} onChange={(event) => setName(event.target.value)} required />
+      </label>
+      <ColorPicker value={color} onChange={setColor} />
+      <label className="field">
+        <span>Counts towards health history</span>
+        <select value={health} onChange={(event) => setHealth(event.target.value as Area["health_kind"])}>
+          <option value="">No</option>
+          <option value="exercise">Exercise</option>
+          <option value="sleep">Sleep</option>
+        </select>
+      </label>
+      <div className="button-row">
+        <button type="button" className="button secondary" onClick={() => run(() => patch(`/areas/${area.id}`, { archived_at: new Date().toISOString() })).then(onDone)}>
+          Archive
+        </button>
+        <button className="button">Save</button>
+      </div>
+    </form>
+  );
+}
+
+const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+function Reminders() {
+  const app = useApp();
+  const [permission, setPermission] = useState(notificationPermission());
+  const prefs = app.prefs;
+
+  async function save(changes: Partial<Preferences>) {
+    try {
+      app.setPrefs(await patch<Preferences>("/preferences", changes));
+    } catch (err) {
+      app.toast(err instanceof Error ? err.message : "Could not save", "error");
+    }
+  }
+
+  async function enable(checked: boolean) {
+    if (checked && canNotify() && notificationPermission() === "default") {
+      setPermission(await requestNotificationPermission());
+    }
+    save({ reminders_enabled: checked });
+  }
+
+  return (
+    <>
+      <section className="panel notice-panel">
+        <h2 className="panel-title"><Icon name="bell" size={18} /> How reminders work</h2>
+        <p>
+          Reminders fire <b>while CharityOS is open</b>, including when it is installed and running in the background
+          for a short time. Phones may pause background apps, so a closed app cannot remind you. Background push
+          notifications are not available yet.
+        </p>
+        <p className="muted">
+          System notifications: {permission === "granted" ? "allowed" : permission === "denied" ? "blocked in browser settings — in-app reminders will be used" : permission === "unsupported" ? "not supported on this device — in-app reminders will be used" : "not yet allowed"}
+        </p>
+      </section>
+      <section className="panel form">
+        <Switch checked={prefs.reminders_enabled} onChange={(value) => enable(value)} title="Activity reminders" hint="Before activities start." />
+        <label className="field">
+          <span>Remind me before</span>
+          <select value={prefs.reminder_lead_minutes} disabled={!prefs.reminders_enabled} onChange={(event) => save({ reminder_lead_minutes: Number(event.target.value) })}>
+            {[0, 5, 10, 15, 30, 60].map((minutes) => (
+              <option key={minutes} value={minutes}>{minutes ? `${durationLabel(minutes)} before` : "At start only"}</option>
+            ))}
+          </select>
+        </label>
+        <Switch checked={prefs.start_reminders_enabled} disabled={!prefs.reminders_enabled} onChange={(value) => save({ start_reminders_enabled: value })} title="At start time" hint="“It's time for …”" />
+        <Switch checked={prefs.daily_planning_reminder_enabled} disabled={!prefs.reminders_enabled} onChange={(value) => save({ daily_planning_reminder_enabled: value })} title="Daily planning" hint="A nudge to plan the day." />
+        <label className="field">
+          <span>Planning time</span>
+          <input type="time" value={prefs.daily_planning_time.slice(0, 5)} disabled={!prefs.daily_planning_reminder_enabled || !prefs.reminders_enabled} onChange={(event) => save({ daily_planning_time: event.target.value })} />
+        </label>
+        <Switch checked={prefs.weekly_review_reminder_enabled} disabled={!prefs.reminders_enabled} onChange={(value) => save({ weekly_review_reminder_enabled: value })} title="Weekly review" hint="Look back on the week." />
+        <div className="field-row">
+          <label className="field">
+            <span>Review day</span>
+            <select value={prefs.weekly_review_weekday} disabled={!prefs.weekly_review_reminder_enabled || !prefs.reminders_enabled} onChange={(event) => save({ weekly_review_weekday: Number(event.target.value) })}>
+              {WEEKDAYS.map((day, index) => <option key={day} value={index + 1}>{day}</option>)}
+            </select>
+          </label>
+          <label className="field">
+            <span>Time</span>
+            <input type="time" value={prefs.weekly_review_time.slice(0, 5)} disabled={!prefs.weekly_review_reminder_enabled || !prefs.reminders_enabled} onChange={(event) => save({ weekly_review_time: event.target.value })} />
+          </label>
+        </div>
+      </section>
+    </>
   );
 }
 
