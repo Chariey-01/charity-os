@@ -86,6 +86,7 @@ RoadmapResourceSerializer = serializer_for(RoadmapResource)
 
 class FocusSessionSerializer(OwnedModelSerializer):
     elapsed_seconds = serializers.SerializerMethodField()
+    schedule_entry = serializers.SerializerMethodField()
 
     class Meta:
         model = FocusSession
@@ -102,7 +103,12 @@ class FocusSessionSerializer(OwnedModelSerializer):
             "task_type_snapshot",
             "roadmap_ancestry_snapshot",
             "elapsed_seconds",
+            "schedule_entry",
         )
+
+    def get_schedule_entry(self, obj):
+        entry = getattr(obj, "schedule_entry", None)
+        return str(entry.pk) if entry else None
 
     def get_elapsed_seconds(self, obj):
         return (

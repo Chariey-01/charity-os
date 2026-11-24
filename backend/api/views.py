@@ -402,7 +402,7 @@ class PlanItemViewSet(OwnedViewSet):
 
 
 class SessionViewSet(OwnedViewSet):
-    queryset = FocusSession.objects.all()
+    queryset = FocusSession.objects.select_related("schedule_entry")
     serializer_class = s.FocusSessionSerializer
     http_method_names = ["get", "post", "patch", "head", "options"]
 

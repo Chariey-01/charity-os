@@ -602,6 +602,15 @@ def test_focus_entry_uses_server_authoritative_session(client, study, clock):
     assert entry_row.actual_duration_seconds is None  # time lives on the session
 
 
+def test_active_session_reports_its_linked_entry(client, study):
+    entry = create(client, area=str(study.id), tracking="focus").json()
+    client.post(f"/api/v1/schedule-entries/{entry['id']}/start")
+
+    active = client.get("/api/v1/sessions/active").json()
+
+    assert active["schedule_entry"] == entry["id"]
+
+
 def test_focus_entry_rejects_manual_actuals(client, study):
     entry = create(client, area=str(study.id), tracking="focus").json()
     url = f"/api/v1/schedule-entries/{entry['id']}"
