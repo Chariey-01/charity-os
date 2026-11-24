@@ -1,7 +1,7 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
-import { json, mockApi } from "../test/mockApi";
+import { day, entry, json, mockApi } from "../test/mockApi";
 import { App, elapsedSeconds } from "./App";
 
 test("shows login when unauthenticated", async () => {
@@ -15,6 +15,21 @@ test("shows an offline state instead of the login form when the server is unreac
   render(<App />);
   expect(await screen.findByRole("alert")).toHaveTextContent(/offline/i);
   expect(screen.queryByRole("button", { name: "Sign in" })).not.toBeInTheDocument();
+});
+
+test("mobile navigation exposes the five primary sections", async () => {
+  mockApi({ "/schedule/day": day([entry()]) });
+  render(<App />);
+  const nav = await screen.findByRole("navigation", { name: "Primary" });
+  const links = within(nav).getAllByRole("link");
+  expect(links.map((link) => link.textContent)).toEqual(["Today", "Schedule", "Roadmaps", "Insights", "Profile"]);
+  expect(within(nav).getByRole("link", { name: "Today" })).toHaveAttribute("aria-current", "page");
+
+  fireEvent.click(within(nav).getByRole("link", { name: "Schedule" }));
+  window.location.hash = "#/schedule";
+  window.dispatchEvent(new HashChangeEvent("hashchange"));
+  expect(await screen.findByRole("tablist", { name: "Calendar view" })).toBeInTheDocument();
+  await waitFor(() => expect(within(nav).getByRole("link", { name: "Schedule" })).toHaveAttribute("aria-current", "page"));
 });
 
 test("paused focus session uses the backend elapsed duration", async () => {

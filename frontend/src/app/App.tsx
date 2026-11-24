@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 
 import { Icon } from "../components/ui";
 import { FocusBar } from "../features/focus/FocusBar";
+import { InsightsScreen } from "../features/insights/InsightsScreen";
 import { ProfileScreen } from "../features/profile/ProfileScreen";
 import { RoadmapsScreen } from "../features/roadmaps/RoadmapsScreen";
 import { EntrySheet } from "../features/schedule/EntrySheet";
@@ -37,6 +38,7 @@ const NAV = [
   { tab: "today", label: "Today", icon: "today" },
   { tab: "schedule", label: "Schedule", icon: "schedule" },
   { tab: "roadmaps", label: "Roadmaps", icon: "roadmaps" },
+  { tab: "insights", label: "Insights", icon: "insights" },
   { tab: "profile", label: "Profile", icon: "profile" },
 ] as const;
 
@@ -219,6 +221,8 @@ function Shell({ user, setUser }: { user: User; setUser: (user: User | null) => 
       <ScheduleScreen route={route} />
     ) : tab === "roadmaps" ? (
       <RoadmapsScreen />
+    ) : tab === "insights" ? (
+      <InsightsScreen />
     ) : tab === "profile" ? (
       <ProfileScreen route={route} />
     ) : (
