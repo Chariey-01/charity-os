@@ -29,6 +29,7 @@ INSTALLED_APPS = [
     "records",
     "reflections",
     "health",
+    "scheduling",
 ]
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -95,6 +96,7 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
+    "EXCEPTION_HANDLER": "api.exceptions.exception_handler",
 }
 
 SESSION_COOKIE_HTTPONLY = True

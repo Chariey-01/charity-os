@@ -14,6 +14,11 @@ HEX_COLOR_PATTERN = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 
 class Area(models.Model):
+    class HealthKind(models.TextChoices):
+        NONE = "", "None"
+        EXERCISE = "exercise", "Exercise"
+        SLEEP = "sleep", "Sleep"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -25,12 +30,20 @@ class Area(models.Model):
     color = models.CharField(max_length=7, default="#64748B")
     icon = models.CharField(max_length=50, blank=True, default="")
     sort_order = models.IntegerField(default=0)
+    # Completed activities in exercise/sleep categories feed health history.
+    health_kind = models.CharField(
+        max_length=10, choices=HealthKind.choices, blank=True, default=""
+    )
     archived_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         constraints = [
+            models.CheckConstraint(
+                condition=models.Q(health_kind__in=("", "exercise", "sleep")),
+                name="planning_area_health_kind_valid",
+            ),
             models.UniqueConstraint(
                 "user",
                 Lower("name"),

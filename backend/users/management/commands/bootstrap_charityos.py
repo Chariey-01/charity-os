@@ -7,6 +7,7 @@ from django.db import transaction
 from django.utils.text import slugify
 
 from challenges.models import Challenge
+from planning.categories import ensure_default_categories
 from planning.models import Area
 
 DEFAULT_AREAS = (
@@ -61,6 +62,8 @@ class Command(BaseCommand):
             Area.objects.create(
                 user=user, name=name, slug=slugify(name), sort_order=order
             )
+        # Adds scheduler categories (Social, Learning, Sleep, Custom) and colours.
+        ensure_default_categories(user)
         today = date.today()
         Challenge.objects.create(
             user=user,
@@ -72,6 +75,7 @@ class Command(BaseCommand):
         )
         self.stdout.write(
             self.style.SUCCESS(
-                f"Created {user.email} with a 96-day challenge and {len(DEFAULT_AREAS)} areas."
+                f"Created {user.email} with a 96-day challenge and "
+                f"{Area.objects.filter(user=user).count()} categories."
             )
         )
