@@ -1,7 +1,7 @@
 # Project workspaces: architecture proposal
 
-**Status:** Proposal, awaiting approval. No application code has changed.
-**Branch:** `feature/project-workspaces`, stacked on the unmerged `feature/mobile-scheduler`. The scheduler branch must merge first.
+**Status:** Approved 2026-11-24 with the recommendations in §10 and the clarifications in §11.
+**Branch:** `feature/project-workspaces`, rebased onto `main` after the scheduler merge (`4ad209d`). Each phase is developed on its own branch off this one and merged back only with the owner's approval.
 
 The goal is personal project management inside CharityOS (projects, epics, tasks, a journal, a board, weekly planning), joined to the scheduler that already exists. It is not an enterprise Jira clone: one user, no sprints, no workflow editor, no permissions matrix.
 
@@ -259,11 +259,80 @@ Each phase is its own set of atomic commits with tests. All phases stay on this 
 | P8 | `seed_project_workspaces` dry-run, then apply after approval | Idempotency; never overwrites user edits |
 | P9 | Mobile acceptance (360–430 px + desktop), migration-steps doc | Scripted browser scenario like `docs/acceptance/` |
 
-## 10. Decisions needed
+## 10. Decision log (approved 2026-11-24)
 
-1. **One task system:** extend `planning.Task` (recommended) rather than a separate project work-item model.
-2. **Navigation:** replace the "Roadmaps" tab with "Projects" containing learning roadmaps (recommended).
-3. **File storage:** in PostgreSQL with 10 MB/file and 500 MB/user limits (recommended; backed up with the database, no disk volume needed), or on a filesystem volume.
-4. **FundBridge status rule:** origin/main = Done, open PR = In Review, pushed branch without PR = In Progress, audit finding = To Do/Blocked.
-5. **QUAHAXTON seed:** workstreams and the brand note/logo only. Should I also search your Google Drive for QUAHAXTON documents? That sends the name "QUAHAXTON" to the Drive connector.
-6. **Markdown:** render notes, journals and PRDs with `react-markdown` (MIT, free, no raw HTML), or keep plain text for now.
+| ID | Decision | Outcome |
+|---|---|---|
+| D1 | One task system | Extend `planning.Task`. No second task system. |
+| D2 | Navigation | The Roadmaps tab becomes **Projects**; learning roadmaps stay reachable inside it. |
+| D3 | File storage | PostgreSQL, 10 MB per file, 500 MB per user, content validation, authenticated download only. |
+| D4 | FundBridge status rule | Accepted, based on verified GitHub state. Every seeded item keeps links to its PR, commits and audit finding. |
+| D5 | QUAHAXTON seed | Only the eight workstreams, the brand-direction note and the existing emblem. No milestones, epics, completed work or progress. |
+| D6 | Formatting | Markdown via `react-markdown` for notes, journals and PRDs. |
+
+Commits reference these IDs (for example `Refs: D1, §5`) so the history maps back to this document.
+
+## 11. Owner clarifications (binding)
+
+- FundBridge and QUAHAXTON are completely independent projects. There is no parent/child or shared data between them.
+- Do not search Google Drive for QUAHAXTON documents (not yet authorised).
+- Migrations preserve task history (`PlanningEvent`), journal revisions, evidence and all existing records.
+- Status migrations are tested in both directions.
+- Existing task endpoints and the scheduler stay compatible.
+- Objectives and milestones are never completed automatically, and never without evidence.
+- Nothing is merged or pushed without the owner's approval.
+
+## 12. Verification against `main` (4ad209d)
+
+Re-checked after the scheduler merge and rebase:
+
+- **Confirmed:** the models and relationships in §1.1; `FocusSession.task` is set from the entry's task when a focus entry starts (ledger rule 1 in §2.3 holds); the bottom tab is still named "Roadmaps"; the next planning migration is `0007`.
+- **Missed in §1.1, now in scope for P1:** `roadmaps/services.py` (`next_actions`) filters linked tasks by `status=planned`. It must use the open statuses.
+- **Pre-existing defect, fixed in P1:** `TaskSerializer` lets `PATCH /tasks/{id}` write `status` directly, bypassing the completion/skip timestamps. A PATCH to `completed` violates the terminal-field constraint and returns HTTP 500. P1 routes every status write through the transition service.
+- **Confirmed need for the P5 tightening:** `update_entry` still allows changing an in-progress entry's task, including focus-tracked ones.
+- **Status dependencies (complete inventory):**
+  - Backend: `planning/services.py` (`add_plan_item`, `carry_over`, `transition_task`); `planning/models.py` (choices, `skipped_at`, constraint); `api/serializers.py` (`TaskSerializer`); `api/views.py` (complete/skip/reopen and the legacy metrics `task__status`); `api/schedule_views.py` (unscheduled tasks); `roadmaps/services.py`; `scheduling/services.py` (`complete_task`).
+  - Frontend: `ProfileScreen` history filter; `EntrySheet` task-status checks; `RoadmapsScreen` creates tasks with `status: "planned"`.
+  - Tests: two assertions in `test_schedule_entries.py`. Every other status reference in the tests is for sessions or roadmap nodes.
+
+## 13. P1 specification: task status workflow
+
+**Branch:** `feature/task-status-workflow` off `feature/project-workspaces`.
+
+| Old | New | Timestamp |
+|---|---|---|
+| `planned` | `todo` | none |
+| `completed` | `done` | `completed_at` (kept) |
+| `skipped` | `cancelled` | `skipped_at` renamed to `cancelled_at` (value kept) |
+| — | `backlog`, `in_progress`, `in_review`, `blocked` | none |
+
+- **Migration `planning.0007_task_status_workflow`** (depends on `planning.0006`, `scheduling.0001`):
+  1. Drop the two task status constraints.
+  2. Rename `skipped_at` to `cancelled_at`.
+  3. Widen `status` choices.
+  4. Remap the data.
+  5. Recreate the constraints for the new states.
+- **Reverse migration:** `todo`, `done` and `cancelled` map back exactly. `backlog`, `in_progress`, `in_review` and `blocked` cannot exist in the old schema and map to `planned` with both timestamps cleared. Old data round-trips byte-for-byte (tested). Data created after the migration loses only the distinction between open states.
+- **Untouched by the migration:** `PlanningEvent` rows (history keeps saying "skipped" or "completed", as it happened), `DailyPlanItem`, `Evidence`, focus sessions and schedule entries.
+- **Services:** `OPEN_STATUSES` replaces the `planned` checks. `transition_task` accepts every new status plus the legacy names (`planned`, `completed`, `skipped`), sets the matching timestamps, is idempotent, and records a `status_changed` event with `{from, to}`. The existing `completed`, `skipped` and `reopened` event types are still written for those transitions.
+- **API compatibility:**
+  - `POST /tasks/{id}/complete`, `skip` and `reopen` keep working.
+  - `POST /tasks` accepts legacy `status` values.
+  - `PATCH` status changes go through the service.
+  - New `POST /tasks/{id}/transition {status}`.
+  - Responses add a read-only, deprecated `legacy_status` for one release.
+- **Rollback:** take a `pg_dump`, then `migrate planning 0006`.
+- **Tests:**
+  - A migration test in both directions with history, plan items, evidence, sessions and schedule entries attached.
+  - Constraint tests.
+  - Transition and compatibility API tests.
+  - Next-actions ranking.
+  - The scheduler's `complete_task`.
+  - Updated frontend checks.
+
+## 14. Commit conventions for this work
+
+- One coherent, independently green change per commit: migrations, models, services, API, frontend and docs are separate when they are separate concerns. Tests ship with what they verify.
+- Conventional Commit subjects; bodies state purpose, design references (`Refs: D1, §13`), migration dependencies and rollback notes.
+- No squashing, no force-pushing, no rewriting published history.
+- Each phase ends with a commit-by-commit summary (SHA, message, files, purpose, verification) and checks for a clean tree, everything committed, green tests, readable history, and no unrelated files or secrets.
