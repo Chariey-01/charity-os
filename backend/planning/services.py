@@ -9,8 +9,8 @@ from .models import DailyPlan, DailyPlanItem, PlanningEvent, Task
 def add_plan_item(*, user, plan, task, kind, position):
     plan = DailyPlan.objects.select_for_update().get(pk=plan.pk, user=user)
     task = Task.objects.select_for_update().get(pk=task.pk, user=user)
-    if task.status != Task.Status.PLANNED:
-        raise ValidationError("Only planned tasks can be added to a plan.")
+    if task.status not in Task.OPEN_STATUSES:
+        raise ValidationError("Only open tasks can be added to a plan.")
     if (
         kind == DailyPlanItem.Kind.PRIMARY
         and plan.items.filter(kind=kind, state=DailyPlanItem.State.CURRENT).count() >= 3
@@ -53,7 +53,7 @@ def carry_over(*, user, item, destination_date):
         return existing.destination_item
     if (
         item.state != DailyPlanItem.State.CURRENT
-        or item.task.status != Task.Status.PLANNED
+        or item.task.status not in Task.OPEN_STATUSES
     ):
         raise ValidationError("Only a current unfinished task can be carried forward.")
     destination, _ = DailyPlan.objects.get_or_create(
@@ -87,23 +87,26 @@ def carry_over(*, user, item, destination_date):
 
 @transaction.atomic
 def transition_task(*, user, task, target):
+    # Legacy names (planned/completed/skipped) stay accepted for callers.
+    target = Task.LEGACY_TO_STATUS.get(target, target)
     task = Task.objects.select_for_update().get(pk=task.pk, user=user)
     now = timezone.now()
-    if target == Task.Status.COMPLETED:
-        task.status, task.completed_at, task.skipped_at = target, now, None
-    elif target == Task.Status.SKIPPED:
-        task.status, task.completed_at, task.skipped_at = target, None, now
-    elif target == Task.Status.PLANNED:
-        task.status, task.completed_at, task.skipped_at = target, None, None
+    if target == Task.Status.DONE:
+        task.status, task.completed_at, task.cancelled_at = target, now, None
+    elif target == Task.Status.CANCELLED:
+        task.status, task.completed_at, task.cancelled_at = target, None, now
+    elif target == Task.Status.TODO:
+        task.status, task.completed_at, task.cancelled_at = target, None, None
     else:
         raise ValidationError("Invalid task transition.")
-    task.save(update_fields=("status", "completed_at", "skipped_at", "updated_at"))
+    task.save(update_fields=("status", "completed_at", "cancelled_at", "updated_at"))
     PlanningEvent.objects.create(
         user=user,
+        # Event names are unchanged so history reads the same as before.
         event_type={
-            "completed": "completed",
-            "skipped": "skipped",
-            "planned": "reopened",
+            "done": "completed",
+            "cancelled": "skipped",
+            "todo": "reopened",
         }[target],
         task=task,
         snapshot={"title": task.title},

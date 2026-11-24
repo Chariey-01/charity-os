@@ -154,11 +154,30 @@ class DailyCapacity(models.Model):
             raise ValidationError(errors)
 
 
+OPEN_TASK_STATUSES = ("backlog", "todo", "in_progress", "in_review", "blocked")
+TASK_STATUSES = (*OPEN_TASK_STATUSES, "done", "cancelled")
+
+
 class Task(models.Model):
+    """Work to accomplish: personal tasks today, project work items later.
+
+    Workflow statuses replace planned/completed/skipped (migration 0007,
+    docs/project-workspaces-design.md §13). Only ``done`` and ``cancelled``
+    are terminal and carry a timestamp.
+    """
+
     class Status(models.TextChoices):
-        PLANNED = "planned", "Planned"
-        COMPLETED = "completed", "Completed"
-        SKIPPED = "skipped", "Skipped"
+        BACKLOG = "backlog", "Backlog"
+        TODO = "todo", "To do"
+        IN_PROGRESS = "in_progress", "In progress"
+        IN_REVIEW = "in_review", "In review"
+        BLOCKED = "blocked", "Blocked"
+        DONE = "done", "Done"
+        CANCELLED = "cancelled", "Cancelled"
+
+    OPEN_STATUSES = OPEN_TASK_STATUSES
+    # Accepted as input and reported as legacy_status for one release.
+    LEGACY_TO_STATUS = {"planned": "todo", "completed": "done", "skipped": "cancelled"}
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
@@ -181,10 +200,10 @@ class Task(models.Model):
     task_type = models.CharField(max_length=40, blank=True, default="")
     is_deep_work_default = models.BooleanField(default=False)
     status = models.CharField(
-        max_length=12, choices=Status.choices, default=Status.PLANNED
+        max_length=12, choices=Status.choices, default=Status.TODO
     )
     completed_at = models.DateTimeField(null=True, blank=True)
-    skipped_at = models.DateTimeField(null=True, blank=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
     archived_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -192,25 +211,25 @@ class Task(models.Model):
     class Meta:
         constraints = [
             models.CheckConstraint(
-                condition=models.Q(status__in=("planned", "completed", "skipped")),
+                condition=models.Q(status__in=TASK_STATUSES),
                 name="planning_task_status_valid",
             ),
             models.CheckConstraint(
                 condition=(
                     models.Q(
-                        status="planned",
+                        status__in=OPEN_TASK_STATUSES,
                         completed_at__isnull=True,
-                        skipped_at__isnull=True,
+                        cancelled_at__isnull=True,
                     )
                     | models.Q(
-                        status="completed",
+                        status="done",
                         completed_at__isnull=False,
-                        skipped_at__isnull=True,
+                        cancelled_at__isnull=True,
                     )
                     | models.Q(
-                        status="skipped",
+                        status="cancelled",
                         completed_at__isnull=True,
-                        skipped_at__isnull=False,
+                        cancelled_at__isnull=False,
                     )
                 ),
                 name="planning_task_terminal_fields_valid",

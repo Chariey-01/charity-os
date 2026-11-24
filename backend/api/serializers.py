@@ -54,7 +54,7 @@ DailyPlanSerializer = serializer_for(DailyPlan)
 DailyPlanItemSerializer = serializer_for(
     DailyPlanItem, read_only=("title_snapshot", "area_label_snapshot")
 )
-TaskSerializer = serializer_for(Task, read_only=("completed_at", "skipped_at"))
+TaskSerializer = serializer_for(Task, read_only=("completed_at", "cancelled_at"))
 RoadmapSerializer = serializer_for(Roadmap)
 
 

@@ -714,7 +714,7 @@ def test_linked_task_can_be_completed_with_entry(client, user, study):
     )
 
     task.refresh_from_db()
-    assert task.status == "completed"
+    assert task.status == "done"
 
 
 def test_completing_entry_leaves_task_open_by_default(client, user):
@@ -724,7 +724,7 @@ def test_completing_entry_leaves_task_open_by_default(client, user):
     client.post(f"/api/v1/schedule-entries/{entry['id']}/complete")
 
     task.refresh_from_db()
-    assert task.status == "planned"
+    assert task.status == "todo"
 
 
 def test_roadmap_node_link(client, user):
