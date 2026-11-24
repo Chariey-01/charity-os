@@ -1,9 +1,13 @@
 import uuid
+from collections import defaultdict
+from datetime import date, timedelta
+from zoneinfo import ZoneInfo
 
 from django.contrib.auth import authenticate, login, logout
 from django.db.models import Sum
 from django.middleware.csrf import get_token
-from rest_framework import viewsets
+from django.utils import timezone
+from rest_framework import serializers, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -114,11 +118,98 @@ def owned_viewset(name, model, serializer):
     )
 
 
-ChallengeViewSet = owned_viewset("ChallengeViewSet", Challenge, s.ChallengeSerializer)
+def challenge_summary(challenge, today=None):
+    today = today or date.today()
+    total = (challenge.end_date - challenge.start_date).days + 1
+    if today < challenge.start_date:
+        day = 0
+        remaining = total
+        phase = "upcoming"
+    elif today > challenge.end_date:
+        day = total
+        remaining = 0
+        phase = "completed"
+    else:
+        day = (today - challenge.start_date).days + 1
+        remaining = (challenge.end_date - today).days
+        phase = "active"
+    return {
+        "id": str(challenge.id),
+        "name": challenge.name,
+        "description": challenge.description,
+        "start_date": challenge.start_date,
+        "end_date": challenge.end_date,
+        "status": challenge.status,
+        "is_primary": challenge.is_primary,
+        "total_days": total,
+        "current_day": day,
+        "days_remaining": remaining,
+        "progress_percent": round((day / total) * 100, 1) if total else 0,
+        "phase": phase,
+    }
+
+
+class ChallengeViewSet(
+    owned_viewset("ChallengeViewSet", Challenge, s.ChallengeSerializer)
+):
+    @action(detail=True, methods=["post"], url_path="set-primary")
+    def set_primary(self, request, pk=None):
+        challenge = self.get_object()
+        Challenge.objects.filter(user=request.user, is_primary=True).update(
+            is_primary=False
+        )
+        challenge.is_primary = True
+        challenge.save(update_fields=("is_primary", "updated_at"))
+        return Response(self.get_serializer(challenge).data)
+
+    @action(detail=True, methods=["post"])
+    def archive(self, request, pk=None):
+        challenge = self.get_object()
+        challenge.archived_at = timezone.now()
+        challenge.is_primary = False
+        challenge.status = Challenge.Status.CANCELLED
+        challenge.save(
+            update_fields=("archived_at", "is_primary", "status", "updated_at")
+        )
+        return Response(self.get_serializer(challenge).data)
+
+    @action(detail=False, methods=["get"])
+    def primary(self, request):
+        challenge = (
+            self.get_queryset()
+            .filter(is_primary=True, archived_at__isnull=True)
+            .first()
+        )
+        return Response(challenge_summary(challenge) if challenge else None)
+
+    def list(self, request, *args, **kwargs):
+        response = super().list(request, *args, **kwargs)
+        response.data = [
+            {**item, **challenge_summary(self.get_queryset().get(pk=item["id"]))}
+            for item in response.data
+        ]
+        return response
+
+
 AreaViewSet = owned_viewset("AreaViewSet", Area, s.AreaSerializer)
 CapacityViewSet = owned_viewset(
     "CapacityViewSet", DailyCapacity, s.DailyCapacitySerializer
 )
+
+
+class CapacityViewSet(CapacityViewSet):
+    def create(self, request, *args, **kwargs):
+        existing = DailyCapacity.objects.filter(
+            user=request.user, local_date=request.data.get("local_date")
+        ).first()
+        if existing:
+            serializer = self.get_serializer(existing, data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+            return Response(serializer.data)
+        return super().create(request, *args, **kwargs)
+
+
 DailyPlanViewSet = owned_viewset("DailyPlanViewSet", DailyPlan, s.DailyPlanSerializer)
 RoadmapViewSet = owned_viewset("RoadmapViewSet", Roadmap, s.RoadmapSerializer)
 
@@ -143,6 +234,60 @@ class RoadmapViewSet(RoadmapViewSet):
             next_actions(
                 request.user, limit=min(int(request.query_params.get("limit", 5)), 20)
             )
+        )
+
+
+class DailyPlanViewSet(DailyPlanViewSet):
+    @action(detail=False, methods=["get"])
+    def today(self, request):
+        requested = request.query_params.get("date")
+        try:
+            local_date = (
+                date.fromisoformat(requested)
+                if requested
+                else timezone.localtime().date()
+            )
+        except ValueError as exc:
+            raise serializers.ValidationError({"date": "Use YYYY-MM-DD."}) from exc
+        plan, _ = DailyPlan.objects.get_or_create(
+            user=request.user,
+            local_date=local_date,
+            defaults={"timezone_name": request.user.timezone},
+        )
+        challenge = Challenge.objects.filter(
+            user=request.user, is_primary=True, archived_at__isnull=True
+        ).first()
+        if challenge and plan.challenge_id != challenge.id:
+            plan.challenge = challenge
+            plan.save(update_fields=("challenge", "updated_at"))
+        capacity = DailyCapacity.objects.filter(
+            user=request.user, local_date=local_date
+        ).first()
+        items = (
+            plan.items.select_related("task", "task__area")
+            .filter(state=DailyPlanItem.State.CURRENT)
+            .order_by("kind", "position")
+        )
+        return Response(
+            {
+                "plan": self.get_serializer(plan).data,
+                "challenge": challenge_summary(challenge) if challenge else None,
+                "capacity": s.DailyCapacitySerializer(
+                    capacity, context={"request": request}
+                ).data
+                if capacity
+                else None,
+                "items": s.DailyPlanItemSerializer(
+                    items, many=True, context={"request": request}
+                ).data,
+                "tasks": s.TaskSerializer(
+                    Task.objects.filter(
+                        user=request.user, created_at__date=local_date
+                    ).order_by("-priority", "created_at"),
+                    many=True,
+                    context={"request": request},
+                ).data,
+            }
         )
 
 
@@ -255,7 +400,21 @@ class SessionViewSet(OwnedViewSet):
 
     @action(detail=False, methods=["post"])
     def start(self, request):
-        area = Area.objects.get(pk=request.data["area"], user=request.user)
+        required = ("id", "title", "area", "is_deep_work")
+        missing = [
+            field
+            for field in required
+            if field not in request.data or request.data[field] in ("", None)
+        ]
+        if missing:
+            raise serializers.ValidationError(
+                {field: "This field is required." for field in missing}
+            )
+        try:
+            area = Area.objects.get(pk=request.data["area"], user=request.user)
+            session_id = uuid.UUID(str(request.data["id"]))
+        except (Area.DoesNotExist, ValueError, TypeError) as exc:
+            raise serializers.ValidationError({"area": "Choose a valid area."}) from exc
         task = Task.objects.filter(
             pk=request.data.get("task"), user=request.user
         ).first()
@@ -264,7 +423,7 @@ class SessionViewSet(OwnedViewSet):
         ).first()
         obj = start_session(
             user=request.user,
-            session_id=uuid.UUID(request.data["id"]),
+            session_id=session_id,
             area=area,
             title=request.data["title"],
             is_deep_work=request.data["is_deep_work"],
@@ -275,10 +434,16 @@ class SessionViewSet(OwnedViewSet):
 
     @action(detail=True, methods=["post"])
     def pause(self, request, pk=None):
+        try:
+            pause_id = uuid.UUID(str(request.data.get("id", "")))
+        except (ValueError, TypeError) as exc:
+            raise serializers.ValidationError(
+                {"id": "A pause id is required."}
+            ) from exc
         obj = pause_session(
             user=request.user,
             session_id=pk,
-            pause_id=uuid.UUID(request.data["id"]),
+            pause_id=pause_id,
             expected_version=request.data.get("expected_version"),
         )
         return Response(self.get_serializer(obj).data)
@@ -336,6 +501,37 @@ class SessionViewSet(OwnedViewSet):
 
 @api_view(["GET"])
 def metrics(request):
+    tz = ZoneInfo(request.user.timezone)
+    today = timezone.localtime(timezone.now(), tz).date()
+    period = request.query_params.get("period", "30d")
+    if period == "7d":
+        start = today - timedelta(days=6)
+    elif period == "90d":
+        start = today - timedelta(days=89)
+    elif period == "year":
+        start = today.replace(month=1, day=1)
+    elif period == "challenge":
+        primary = Challenge.objects.filter(
+            user=request.user, is_primary=True, archived_at__isnull=True
+        ).first()
+        start = (
+            max(primary.start_date, today - timedelta(days=365))
+            if primary
+            else today - timedelta(days=29)
+        )
+    elif request.query_params.get("start"):
+        try:
+            start = date.fromisoformat(request.query_params["start"])
+        except ValueError as exc:
+            raise serializers.ValidationError({"start": "Use YYYY-MM-DD."}) from exc
+    else:
+        start = today - timedelta(days=29)
+    end = today
+    if request.query_params.get("end"):
+        try:
+            end = date.fromisoformat(request.query_params["end"])
+        except ValueError as exc:
+            raise serializers.ValidationError({"end": "Use YYYY-MM-DD."}) from exc
     sessions = FocusSession.objects.filter(user=request.user, status="completed")
     total = sessions.aggregate(value=Sum("duration_seconds"))["value"] or 0
     deep = (
@@ -348,6 +544,54 @@ def metrics(request):
         state="removed"
     )
     completed = appearances.filter(task__status="completed").count()
+
+    def in_range(value):
+        return start <= value <= end
+
+    focus_by_day = defaultdict(int)
+    deep_by_day = defaultdict(int)
+    area_minutes = defaultdict(int)
+    for session in sessions.select_related("area"):
+        local_day = timezone.localtime(session.started_at, tz).date()
+        if in_range(local_day):
+            minutes = (session.duration_seconds or 0) // 60
+            focus_by_day[str(local_day)] += minutes
+            if session.is_deep_work:
+                deep_by_day[str(local_day)] += minutes
+            area_minutes[session.area_label_snapshot or session.area.name] += minutes
+    planned_by_day = defaultdict(int)
+    completed_by_day = defaultdict(int)
+    for item in (
+        DailyPlanItem.objects.filter(user=request.user)
+        .exclude(state="removed")
+        .select_related("plan", "task")
+    ):
+        if in_range(item.plan.local_date):
+            key = str(item.plan.local_date)
+            planned_by_day[key] += 1
+            if item.task.status == Task.Status.COMPLETED:
+                completed_by_day[key] += 1
+    sleep_by_day = defaultdict(float)
+    for sleep in SleepLog.objects.filter(user=request.user):
+        local_day = sleep.wake_local_date
+        if in_range(local_day):
+            sleep_by_day[str(local_day)] += (
+                sleep.woke_at - sleep.started_at
+            ).total_seconds() / 3600
+    exercise_by_day = defaultdict(int)
+    for exercise in ExerciseLog.objects.filter(user=request.user):
+        local_day = timezone.localtime(exercise.started_at, tz).date()
+        if in_range(local_day):
+            exercise_by_day[str(local_day)] += int(
+                (exercise.ended_at - exercise.started_at).total_seconds() // 60
+            )
+    roadmaps = []
+    for roadmap in Roadmap.objects.filter(user=request.user).order_by("title"):
+        progress = roadmap.progress()
+        roadmaps.append({"id": str(roadmap.id), "title": roadmap.title, **progress})
+    challenge = Challenge.objects.filter(
+        user=request.user, is_primary=True, archived_at__isnull=True
+    ).first()
     return Response(
         {
             "total_focused_minutes": total // 60,
@@ -357,5 +601,54 @@ def metrics(request):
             "planned_completion_rate": completed / appearances.count()
             if appearances.count()
             else 0,
+            "period": {"start": start, "end": end, "label": period},
+            "challenge": challenge_summary(challenge, today) if challenge else None,
+            "roadmaps": roadmaps,
+            "focus_trend": [
+                {
+                    "date": str(start + timedelta(days=i)),
+                    "minutes": focus_by_day.get(str(start + timedelta(days=i)), 0),
+                }
+                for i in range((end - start).days + 1)
+            ],
+            "deep_work_trend": [
+                {
+                    "date": str(start + timedelta(days=i)),
+                    "minutes": deep_by_day.get(str(start + timedelta(days=i)), 0),
+                }
+                for i in range((end - start).days + 1)
+            ],
+            "planned_vs_completed": [
+                {
+                    "date": str(start + timedelta(days=i)),
+                    "planned": planned_by_day.get(str(start + timedelta(days=i)), 0),
+                    "completed": completed_by_day.get(
+                        str(start + timedelta(days=i)), 0
+                    ),
+                }
+                for i in range((end - start).days + 1)
+            ],
+            "area_distribution": [
+                {"area": name, "minutes": minutes}
+                for name, minutes in sorted(
+                    area_minutes.items(), key=lambda item: (-item[1], item[0])
+                )
+            ],
+            "exercise_trend": [
+                {
+                    "date": str(start + timedelta(days=i)),
+                    "minutes": exercise_by_day.get(str(start + timedelta(days=i)), 0),
+                }
+                for i in range((end - start).days + 1)
+            ],
+            "sleep_trend": [
+                {
+                    "date": str(start + timedelta(days=i)),
+                    "hours": round(
+                        sleep_by_day.get(str(start + timedelta(days=i)), 0), 2
+                    ),
+                }
+                for i in range((end - start).days + 1)
+            ],
         }
     )

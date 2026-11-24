@@ -56,23 +56,60 @@ DailyPlanItemSerializer = serializer_for(
 )
 TaskSerializer = serializer_for(Task, read_only=("completed_at", "skipped_at"))
 RoadmapSerializer = serializer_for(Roadmap)
-RoadmapNodeSerializer = serializer_for(RoadmapNode)
+
+
+class RoadmapNodeSerializer(OwnedModelSerializer):
+    class Meta:
+        model = RoadmapNode
+        fields = "__all__"
+        read_only_fields = ("user", "completed_at")
+
+    def update(self, instance, validated_data):
+        state = validated_data.get("state", instance.state)
+        if state == RoadmapNode.State.COMPLETED and instance.state != state:
+            from django.utils import timezone
+
+            instance.completed_at = timezone.now()
+        elif state != RoadmapNode.State.COMPLETED:
+            instance.completed_at = None
+        instance.state = state
+        for field, value in validated_data.items():
+            if field != "state":
+                setattr(instance, field, value)
+        instance.save()
+        return instance
+
+
 RoadmapPrerequisiteSerializer = serializer_for(RoadmapNodePrerequisite)
 RoadmapResourceSerializer = serializer_for(RoadmapResource)
-FocusSessionSerializer = serializer_for(
-    FocusSession,
-    read_only=(
-        "started_at",
-        "ended_at",
-        "duration_seconds",
-        "status",
-        "version",
-        "timezone_snapshot",
-        "area_label_snapshot",
-        "task_type_snapshot",
-        "roadmap_ancestry_snapshot",
-    ),
-)
+
+
+class FocusSessionSerializer(OwnedModelSerializer):
+    elapsed_seconds = serializers.SerializerMethodField()
+
+    class Meta:
+        model = FocusSession
+        fields = "__all__"
+        read_only_fields = (
+            "user",
+            "started_at",
+            "ended_at",
+            "duration_seconds",
+            "status",
+            "version",
+            "timezone_snapshot",
+            "area_label_snapshot",
+            "task_type_snapshot",
+            "roadmap_ancestry_snapshot",
+            "elapsed_seconds",
+        )
+
+    def get_elapsed_seconds(self, obj):
+        return (
+            obj.duration_seconds
+            if obj.status in ("completed", "cancelled")
+            else obj.elapsed_seconds()
+        )
 
 
 class EvidenceSerializer(OwnedModelSerializer):
