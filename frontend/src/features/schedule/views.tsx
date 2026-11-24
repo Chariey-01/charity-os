@@ -1,10 +1,24 @@
-import { MouseEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { KeyboardEvent, MouseEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { useApp } from "../../app/context";
-import { Icon, StatusBadge } from "../../components/ui";
-import { actualLabel, durationLabel, formatDate, formatTime, hhmmLabel, hourLabel, minutesToHHMM, zoned } from "../../lib/time";
+import { CategoryDot, Icon, StatusBadge } from "../../components/ui";
+import {
+  actualLabel,
+  addDays,
+  durationLabel,
+  formatDate,
+  formatTime,
+  hhmmLabel,
+  hourLabel,
+  isoWeekday,
+  minutesToHHMM,
+  monthGrid,
+  zoned,
+} from "../../lib/time";
 import type { Entry } from "../../lib/types";
 import { layoutDay, useEntryCommand } from "./hooks";
+
+const HIDDEN_IN_GRID = new Set(["cancelled", "rescheduled"]);
 
 export function EntryRow({ entry, showDate = false }: { entry: Entry; showDate?: boolean }) {
   const app = useApp();
@@ -174,6 +188,154 @@ export function DayGrid({ date, entries, compact = false }: { date: string; entr
           })}
         </div>
       </div>
+    </div>
+  );
+}
+
+export function WeekGrid({ start, entries, onOpenDay }: { start: string; entries: Entry[]; onOpenDay: (date: string) => void }) {
+  const app = useApp();
+  const tz = app.user.timezone;
+  const hourPx = 40;
+  const now = useNowMinutes(tz);
+  const days = Array.from({ length: 7 }, (_, index) => addDays(start, index));
+  const scroller = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    scroller.current?.scrollTo?.({ top: 7 * hourPx });
+  }, [start]);
+
+  function addAt(date: string, event: MouseEvent<HTMLDivElement>) {
+    if ((event.target as HTMLElement).closest(".event")) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const minutes = Math.floor(((event.clientY - rect.top) / hourPx) * 2) * 30;
+    const startMin = Math.max(0, Math.min(23 * 60 + 30, minutes));
+    app.openQuickAdd({ date, start: minutesToHHMM(startMin), end: minutesToHHMM(Math.min(startMin + 60, 1439)) });
+  }
+
+  return (
+    <div className="week">
+      <div className="week-head">
+        <span />
+        {days.map((day) => (
+          <button
+            type="button"
+            key={day}
+            className={`week-day ${day === now.date ? "today" : ""}`}
+            onClick={() => onOpenDay(day)}
+            aria-label={`Open ${formatDate(day, { weekday: "long", day: "numeric", month: "long" })}`}
+          >
+            <small>{formatDate(day, { weekday: "narrow" })}</small>
+            <b>{Number(day.slice(8))}</b>
+          </button>
+        ))}
+      </div>
+      <div className="week-body" ref={scroller}>
+        <div className="week-inner" style={{ height: hourPx * 24 }}>
+          <div className="week-gutter">
+            {HOURS.filter((hour) => hour % 3 === 0 && hour).map((hour) => (
+              <span key={hour} style={{ top: hour * hourPx }}>
+                {hour}
+              </span>
+            ))}
+          </div>
+          {days.map((day) => (
+            <div key={day} className="week-col" onClick={(event) => addAt(day, event)} data-testid={`week-col-${day}`}>
+              {day === now.date && <div className="now-line" style={{ top: (now.minutes / 60) * hourPx }} aria-hidden="true" />}
+              {layoutDay(entries, day, tz).map(({ entry, from, to, column, columns }) => (
+                <button
+                  type="button"
+                  key={entry.id}
+                  className={`event mini status-${entry.status}`}
+                  style={{
+                    top: (from / 60) * hourPx,
+                    height: Math.max(14, ((to - from) / 60) * hourPx - 1),
+                    left: `${(column / columns) * 100}%`,
+                    width: `${100 / columns}%`,
+                    ["--event" as string]: entry.color,
+                  }}
+                  onClick={() => app.openEntry(entry)}
+                  aria-label={`${entry.title}, ${formatDate(day, { weekday: "long" })} ${formatTime(entry.start_at, tz)}`}
+                >
+                  <b>{entry.title}</b>
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function MonthGrid({
+  month,
+  selected,
+  entries,
+  onSelect,
+}: {
+  month: string;
+  selected: string;
+  entries: Entry[];
+  onSelect: (date: string) => void;
+}) {
+  const app = useApp();
+  const tz = app.user.timezone;
+  const today = app.today;
+  const cells = monthGrid(month);
+  const byDay = useMemo(() => {
+    const map = new Map<string, Entry[]>();
+    for (const entry of entries) {
+      if (HIDDEN_IN_GRID.has(entry.status)) continue;
+      const day = zoned(entry.start_at, tz).date;
+      map.set(day, [...(map.get(day) ?? []), entry]);
+    }
+    return map;
+  }, [entries, tz]);
+
+  function onKey(event: KeyboardEvent<HTMLDivElement>) {
+    const moves: Record<string, number> = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 };
+    if (!(event.key in moves)) return;
+    event.preventDefault();
+    onSelect(addDays(selected, moves[event.key]));
+  }
+
+  return (
+    <div className="month" role="grid" aria-label={formatDate(month, { month: "long", year: "numeric" })} onKeyDown={onKey}>
+      <div className="month-weekdays" role="row">
+        {cells.slice(0, 7).map((day) => (
+          <span key={day} role="columnheader" aria-label={formatDate(day, { weekday: "long" })}>
+            {formatDate(day, { weekday: "narrow" })}
+          </span>
+        ))}
+      </div>
+      {[0, 1, 2, 3, 4, 5].map((row) => (
+        <div className="month-row" role="row" key={row}>
+          {cells.slice(row * 7, row * 7 + 7).map((day) => {
+            const items = byDay.get(day) ?? [];
+            const inMonth = day.slice(0, 7) === month.slice(0, 7);
+            const doneCount = items.filter((item) => item.status === "completed" || item.status === "partially_completed").length;
+            return (
+              <button
+                type="button"
+                role="gridcell"
+                key={day}
+                tabIndex={day === selected ? 0 : -1}
+                aria-selected={day === selected}
+                className={`month-cell ${inMonth ? "" : "outside"} ${day === today ? "today" : ""} ${day === selected ? "selected" : ""} ${isoWeekday(day) >= 6 ? "weekend" : ""}`}
+                onClick={() => onSelect(day)}
+                aria-label={`${formatDate(day, { weekday: "long", day: "numeric", month: "long" })}, ${items.length} activities${items.length ? `, ${doneCount} done` : ""}`}
+              >
+                <span className="month-num">{Number(day.slice(8))}</span>
+                <span className="month-dots" aria-hidden="true">
+                  {items.slice(0, 3).map((item) => (
+                    <CategoryDot key={item.id} color={item.color} />
+                  ))}
+                  {items.length > 3 && <small>+{items.length - 3}</small>}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ))}
     </div>
   );
 }

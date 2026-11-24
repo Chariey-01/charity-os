@@ -5,6 +5,7 @@ import { ProfileScreen } from "../features/profile/ProfileScreen";
 import { RoadmapsScreen } from "../features/roadmaps/RoadmapsScreen";
 import { EntrySheet } from "../features/schedule/EntrySheet";
 import { QuickAddSheet } from "../features/schedule/QuickAddSheet";
+import { ScheduleScreen } from "../features/schedule/ScheduleScreen";
 import { TodayScreen } from "../features/today/TodayScreen";
 import { ApiError, api, post } from "../lib/api";
 import { useOnline } from "../lib/pwa";
@@ -33,6 +34,7 @@ const DEFAULT_PREFS: Preferences = {
 
 const NAV = [
   { tab: "today", label: "Today", icon: "today" },
+  { tab: "schedule", label: "Schedule", icon: "schedule" },
   { tab: "roadmaps", label: "Roadmaps", icon: "roadmaps" },
   { tab: "profile", label: "Profile", icon: "profile" },
 ] as const;
@@ -212,7 +214,9 @@ function Shell({ user, setUser }: { user: User; setUser: (user: User | null) => 
   );
 
   const screen =
-    tab === "roadmaps" ? (
+    tab === "schedule" ? (
+      <ScheduleScreen route={route} />
+    ) : tab === "roadmaps" ? (
       <RoadmapsScreen />
     ) : tab === "profile" ? (
       <ProfileScreen route={route} />
@@ -235,7 +239,7 @@ function Shell({ user, setUser }: { user: User; setUser: (user: User | null) => 
         <button
           type="button"
           className="fab"
-          onClick={() => setQuickAdd({ date: today })}
+          onClick={() => setQuickAdd({ date: tab === "schedule" ? route.params.get("date") ?? today : today })}
           aria-label="Quick add activity"
         >
           <Icon name="plus" size={26} />

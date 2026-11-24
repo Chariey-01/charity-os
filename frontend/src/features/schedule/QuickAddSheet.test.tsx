@@ -84,3 +84,13 @@ test("overlap is flagged and saving again explicitly allows it with the same id"
   expect(second.body?.id).toBe(first.body?.id);
 });
 
+test("tapping a calendar slot pre-fills the time", async () => {
+  window.location.hash = `#/schedule?view=day&date=${TODAY}`;
+  mockApi();
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Add activity at 3:00 PM" }));
+  const dialog = await screen.findByRole("dialog", { name: "Quick add" });
+  expect(within(dialog).getByLabelText("Start", { exact: true })).toHaveValue("15:00");
+  expect(within(dialog).getByLabelText("End", { exact: true })).toHaveValue("16:00");
+  expect(within(dialog).getByLabelText("Date", { exact: true })).toHaveValue(TODAY);
+});
