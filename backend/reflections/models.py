@@ -21,6 +21,7 @@ class DailyReflection(models.Model):
     improve = models.TextField(blank=True, default="")
     mood = models.PositiveSmallIntegerField(null=True, blank=True)
     closed_at = models.DateTimeField(null=True, blank=True)
+    archived_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         constraints = [
@@ -44,6 +45,7 @@ class WeeklyReview(models.Model):
     lessons = models.TextField(blank=True, default="")
     next_week = models.TextField(blank=True, default="")
     closed_at = models.DateTimeField(null=True, blank=True)
+    archived_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         constraints = [

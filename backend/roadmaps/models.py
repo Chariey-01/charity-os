@@ -12,7 +12,7 @@ class Roadmap(models.Model):
     class Status(models.TextChoices):
         ACTIVE = "active", "Active"
         COMPLETED = "completed", "Completed"
-        ARCHIVED = "archived", "Archived"
+        # "archived" was a status until roadmaps.0002; archiving is archived_at.
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
@@ -26,6 +26,7 @@ class Roadmap(models.Model):
     status = models.CharField(
         max_length=12, choices=Status.choices, default=Status.ACTIVE
     )
+    archived_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -70,6 +71,7 @@ class RoadmapNode(models.Model):
     )
     position = models.PositiveIntegerField(default=0)
     completed_at = models.DateTimeField(null=True, blank=True)
+    archived_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -125,6 +127,7 @@ class RoadmapResource(models.Model):
     label = models.CharField(max_length=120)
     url = models.URLField()
     position = models.PositiveIntegerField(default=0)
+    archived_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         constraints = [

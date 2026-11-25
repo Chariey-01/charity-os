@@ -25,6 +25,7 @@ class Accomplishment(models.Model):
     session = models.ForeignKey(
         FocusSession, null=True, blank=True, on_delete=models.SET_NULL
     )
+    archived_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
 
@@ -65,6 +66,7 @@ class Evidence(models.Model):
         on_delete=models.CASCADE,
         related_name="evidence",
     )
+    archived_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
