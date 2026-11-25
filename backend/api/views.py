@@ -30,7 +30,13 @@ from health.models import (
     SleepLog,
 )
 from planning.models import Area, DailyCapacity, DailyPlan, DailyPlanItem, Task
-from planning.services import add_plan_item, carry_over, transition_task
+from planning.services import (
+    add_plan_item,
+    archive_task,
+    carry_over,
+    restore_task,
+    transition_task,
+)
 from records.models import Accomplishment, Evidence
 from reflections.models import DailyReflection, WeeklyReview
 from roadmaps.models import (
@@ -43,6 +49,7 @@ from roadmaps.services import next_actions, roadmap_tree
 from scheduling.services import sync_entry_from_session
 
 from . import serializers as s
+from .archive import ArchivableMixin
 
 
 @api_view(["GET"])
@@ -151,28 +158,25 @@ def challenge_summary(challenge, today=None):
     }
 
 
-class ChallengeViewSet(
-    owned_viewset("ChallengeViewSet", Challenge, s.ChallengeSerializer)
-):
+class ChallengeViewSet(ArchivableMixin, OwnedViewSet):
+    queryset = Challenge.objects.all()
+    serializer_class = s.ChallengeSerializer
+    # An archived challenge cannot be primary (database constraint). Its status
+    # is left alone: archiving must not rewrite how the challenge ended.
+    archive_also = {"is_primary": False}
+
     @action(detail=True, methods=["post"], url_path="set-primary")
     def set_primary(self, request, pk=None):
         challenge = self.get_object()
+        if challenge.archived_at is not None:
+            raise serializers.ValidationError(
+                {"is_primary": ["Restore this challenge before making it primary."]}
+            )
         Challenge.objects.filter(user=request.user, is_primary=True).update(
             is_primary=False
         )
         challenge.is_primary = True
         challenge.save(update_fields=("is_primary", "updated_at"))
-        return Response(self.get_serializer(challenge).data)
-
-    @action(detail=True, methods=["post"])
-    def archive(self, request, pk=None):
-        challenge = self.get_object()
-        challenge.archived_at = timezone.now()
-        challenge.is_primary = False
-        challenge.status = Challenge.Status.CANCELLED
-        challenge.save(
-            update_fields=("archived_at", "is_primary", "status", "updated_at")
-        )
         return Response(self.get_serializer(challenge).data)
 
     @action(detail=False, methods=["get"])
@@ -193,10 +197,10 @@ class ChallengeViewSet(
         return response
 
 
-AreaViewSet = owned_viewset("AreaViewSet", Area, s.AreaSerializer)
+class AreaViewSet(ArchivableMixin, OwnedViewSet):
+    queryset = Area.objects.all()
+    serializer_class = s.AreaSerializer
 
-
-class AreaViewSet(AreaViewSet):
     def get_queryset(self):
         return self.queryset.filter(user=self.request.user).order_by(
             "sort_order", "name"
@@ -278,7 +282,7 @@ class DailyPlanViewSet(DailyPlanViewSet):
         ).first()
         items = (
             plan.items.select_related("task", "task__area")
-            .filter(state=DailyPlanItem.State.CURRENT)
+            .filter(state=DailyPlanItem.State.CURRENT, task__archived_at__isnull=True)
             .order_by("kind", "position")
         )
         return Response(
@@ -295,7 +299,9 @@ class DailyPlanViewSet(DailyPlanViewSet):
                 ).data,
                 "tasks": s.TaskSerializer(
                     Task.objects.filter(
-                        user=request.user, created_at__date=local_date
+                        user=request.user,
+                        created_at__date=local_date,
+                        archived_at__isnull=True,
                     ).order_by("-priority", "created_at"),
                     many=True,
                     context={"request": request},
@@ -336,9 +342,15 @@ WeeklyReviewViewSet = owned_viewset(
 )
 
 
-class TaskViewSet(OwnedViewSet):
+class TaskViewSet(ArchivableMixin, OwnedViewSet):
     queryset = Task.objects.all()
     serializer_class = s.TaskSerializer
+
+    def archive_service(self, user, instance):
+        return archive_task(user=user, task=instance)
+
+    def restore_service(self, user, instance):
+        return restore_task(user=user, task=instance)
 
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):

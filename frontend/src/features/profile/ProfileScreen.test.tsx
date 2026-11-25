@@ -22,6 +22,24 @@ test("categories: add one with a unique slug and colour, or restore missing defa
   await waitFor(() => expect(api.writes().some((call) => call.path === "/areas/ensure-defaults")).toBe(true));
 });
 
+test("categories: archive and restore through the archive actions, never by editing archived_at", async () => {
+  window.location.hash = "#/profile/categories";
+  const old = { ...areas[1], id: "a-old", name: "Old hobby", slug: "old-hobby", archived_at: "2026-11-01T10:00:00Z" };
+  const api = mockApi({ "/areas": [...areas, old] });
+  render(<App />);
+  expect(await screen.findByText("Learning")).toBeInTheDocument();
+  expect(api.calls.find((call) => call.method === "GET" && call.path === "/areas")?.search).toBe("?archived=include");
+
+  fireEvent.click(screen.getByText("Archived"));
+  fireEvent.click(screen.getByRole("button", { name: "Restore" }));
+  await waitFor(() => expect(api.writes().map((call) => `${call.method} ${call.path}`)).toContain("POST /areas/a-old/restore"));
+
+  fireEvent.click(within(screen.getByText("Learning").closest("li")!).getByRole("button", { name: "Edit" }));
+  fireEvent.click(screen.getByRole("button", { name: "Archive" }));
+  await waitFor(() => expect(api.writes().map((call) => `${call.method} ${call.path}`)).toContain("POST /areas/a-learn/archive"));
+  expect(api.writes().some((call) => call.body && "archived_at" in call.body)).toBe(false);
+});
+
 test("reminder settings save preferences and state that reminders need the app open", async () => {
   window.location.hash = "#/profile/reminders";
   const api = mockApi({ "PATCH /preferences": (call: { body: Record<string, unknown> }) => ({ ...prefs, ...call.body }) });

@@ -27,6 +27,24 @@ from roadmaps.models import (
 
 
 class OwnedModelSerializer(serializers.ModelSerializer):
+    def get_fields(self):
+        fields = super().get_fields()
+        # Archiving goes through POST .../archive and .../restore (api/archive.py).
+        if "archived_at" in fields:
+            fields["archived_at"].read_only = True
+        return fields
+
+    def to_internal_value(self, data):
+        if "archived_at" in self.fields and "archived_at" in data:
+            raise serializers.ValidationError(
+                {
+                    "archived_at": [
+                        "Archive or restore with POST .../archive or .../restore."
+                    ]
+                }
+            )
+        return super().to_internal_value(data)
+
     def validate(self, attrs):
         user = self.context["request"].user
         for value in attrs.values():

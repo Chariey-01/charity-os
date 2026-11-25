@@ -65,9 +65,9 @@ def next_actions(user, limit=5):
         ):
             continue
         tasks = list(
-            node.tasks.filter(status__in=Task.OPEN_STATUSES).order_by(
-                "-priority", "created_at"
-            )
+            node.tasks.filter(
+                status__in=Task.OPEN_STATUSES, archived_at__isnull=True
+            ).order_by("-priority", "created_at")
         )
         priority = tasks[0].priority if tasks else 0
         ranked.append(

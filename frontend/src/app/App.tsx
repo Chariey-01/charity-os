@@ -148,7 +148,8 @@ function Shell({ user, setUser }: { user: User; setUser: (user: User | null) => 
   }, []);
 
   const reloadAreas = useCallback(async () => {
-    setAllAreas(await api<Area[]>("/areas"));
+    // Archived categories are included so Profile can list and restore them.
+    setAllAreas(await api<Area[]>("/areas?archived=include"));
   }, []);
 
   useEffect(() => {

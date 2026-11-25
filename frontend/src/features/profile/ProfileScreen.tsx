@@ -211,7 +211,7 @@ function Categories() {
               <li key={area.id}>
                 <CategoryDot color={area.color} />
                 <span className="grow">{area.name}</span>
-                <button type="button" className="text-button" onClick={() => run(() => patch(`/areas/${area.id}`, { archived_at: null }))}>Restore</button>
+                <button type="button" className="text-button" onClick={() => run(() => post(`/areas/${area.id}/restore`))}>Restore</button>
               </li>
             ))}
           </ul>
@@ -269,7 +269,7 @@ function CategoryEditor({ area, onDone, run }: { area: Area; onDone: () => void;
         </select>
       </label>
       <div className="button-row">
-        <button type="button" className="button secondary" onClick={() => run(() => patch(`/areas/${area.id}`, { archived_at: new Date().toISOString() })).then(onDone)}>
+        <button type="button" className="button secondary" onClick={() => run(() => post(`/areas/${area.id}/archive`)).then(onDone)}>
           Archive
         </button>
         <button className="button">Save</button>
@@ -552,7 +552,8 @@ function History() {
   const [error, setError] = useState("");
   useEffect(() => {
     Promise.all([
-      api<Task[]>("/tasks"),
+      // History keeps records after they are archived.
+      api<Task[]>("/tasks?archived=include"),
       api<{ title: string; duration_seconds: number | null; outcome: string; status: string }[]>("/sessions"),
       api<{ kind: string; text: string; url: string }[]>("/evidence"),
       api<{ title: string; local_date: string }[]>("/accomplishments"),

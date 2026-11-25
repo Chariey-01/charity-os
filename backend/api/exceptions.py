@@ -1,5 +1,6 @@
 from django.core.exceptions import ObjectDoesNotExist
 from django.core.exceptions import ValidationError as DjangoValidationError
+from rest_framework.exceptions import APIException, MethodNotAllowed
 from rest_framework.response import Response
 from rest_framework.views import exception_handler as drf_exception_handler
 
@@ -16,6 +17,17 @@ def _flatten(exc):
         return first[0], fields
     messages = [str(message) for message in exc.messages] or ["Invalid request."]
     return messages[0], {}
+
+
+class CodedAPIException(APIException):
+    """An API error that answers with a stable ``error.code``."""
+
+
+def _error(status, code, message, **extra):
+    return Response(
+        {"detail": message, "error": {"code": code, "message": message, **extra}},
+        status=status,
+    )
 
 
 def exception_handler(exc, context):
@@ -40,6 +52,18 @@ def exception_handler(exc, context):
                 for entry in exc.conflicts
             ]
         return Response({"detail": message, "error": error}, status=status)
+    if isinstance(exc, CodedAPIException):
+        return _error(exc.status_code, exc.default_code, str(exc.detail))
+    request = context.get("request")
+    instead = getattr(context.get("view"), "delete_instead", None)
+    if (
+        isinstance(exc, MethodNotAllowed)
+        and instead
+        and request is not None
+        and request.method == "DELETE"
+    ):
+        code, message = instead
+        return _error(405, code, message)
     if isinstance(exc, ObjectDoesNotExist):
         message = "Not found."
         return Response(
