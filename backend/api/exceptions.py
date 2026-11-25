@@ -1,5 +1,8 @@
+from collections import Counter
+
 from django.core.exceptions import ObjectDoesNotExist
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db.models import ProtectedError, RestrictedError
 from rest_framework.exceptions import APIException, MethodNotAllowed
 from rest_framework.response import Response
 from rest_framework.views import exception_handler as drf_exception_handler
@@ -30,6 +33,12 @@ def _error(status, code, message, **extra):
     )
 
 
+def _blocking(objects):
+    """What still points at the record, as counts per kind: no ids or content."""
+    counts = Counter(str(obj._meta.verbose_name_plural) for obj in objects)
+    return [{"model": name, "count": count} for name, count in sorted(counts.items())]
+
+
 def exception_handler(exc, context):
     """Return structured JSON for domain errors raised by services.
 
@@ -52,6 +61,15 @@ def exception_handler(exc, context):
                 for entry in exc.conflicts
             ]
         return Response({"detail": message, "error": error}, status=status)
+    if isinstance(exc, (ProtectedError, RestrictedError)):
+        blocked = getattr(exc, "protected_objects", None) or exc.restricted_objects
+        return _error(
+            409,
+            "has_history",
+            "This record still has history attached and cannot be deleted. "
+            "Archive it instead.",
+            blocking=_blocking(blocked),
+        )
     if isinstance(exc, CodedAPIException):
         return _error(exc.status_code, exc.default_code, str(exc.detail))
     request = context.get("request")
