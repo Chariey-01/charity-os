@@ -58,7 +58,7 @@ class ExerciseLog(models.Model):
         FocusSession,
         null=True,
         blank=True,
-        on_delete=models.SET_NULL,
+        on_delete=models.RESTRICT,
         related_name="exercise_log",
     )
     archived_at = models.DateTimeField(null=True, blank=True)

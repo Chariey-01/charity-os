@@ -21,7 +21,7 @@ class Roadmap(models.Model):
     title = models.CharField(max_length=160)
     description = models.TextField(blank=True, default="")
     area = models.ForeignKey(
-        Area, null=True, blank=True, on_delete=models.SET_NULL, related_name="roadmaps"
+        Area, null=True, blank=True, on_delete=models.RESTRICT, related_name="roadmaps"
     )
     status = models.CharField(
         max_length=12, choices=Status.choices, default=Status.ACTIVE
@@ -59,9 +59,15 @@ class RoadmapNode(models.Model):
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="roadmap_nodes"
     )
-    roadmap = models.ForeignKey(Roadmap, on_delete=models.CASCADE, related_name="nodes")
+    roadmap = models.ForeignKey(
+        Roadmap, on_delete=models.RESTRICT, related_name="nodes"
+    )
     parent = models.ForeignKey(
-        "self", null=True, blank=True, on_delete=models.CASCADE, related_name="children"
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.RESTRICT,
+        related_name="children",
     )
     title = models.CharField(max_length=180)
     description = models.TextField(blank=True, default="")
@@ -122,7 +128,7 @@ class RoadmapResource(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     node = models.ForeignKey(
-        RoadmapNode, on_delete=models.CASCADE, related_name="resources"
+        RoadmapNode, on_delete=models.RESTRICT, related_name="resources"
     )
     label = models.CharField(max_length=120)
     url = models.URLField()

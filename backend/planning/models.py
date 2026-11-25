@@ -186,13 +186,13 @@ class Task(models.Model):
     title = models.CharField(max_length=200)
     description = models.TextField(blank=True, default="")
     area = models.ForeignKey(
-        Area, null=True, blank=True, on_delete=models.SET_NULL, related_name="tasks"
+        Area, null=True, blank=True, on_delete=models.RESTRICT, related_name="tasks"
     )
     roadmap_item = models.ForeignKey(
         "roadmaps.RoadmapNode",
         null=True,
         blank=True,
-        on_delete=models.SET_NULL,
+        on_delete=models.RESTRICT,
         related_name="tasks",
     )
     priority = models.PositiveSmallIntegerField(default=0)
@@ -248,7 +248,7 @@ class DailyPlan(models.Model):
         Challenge,
         null=True,
         blank=True,
-        on_delete=models.SET_NULL,
+        on_delete=models.RESTRICT,
         related_name="daily_plans",
     )
     notes = models.TextField(blank=True, default="")
@@ -279,8 +279,8 @@ class DailyPlanItem(models.Model):
         on_delete=models.CASCADE,
         related_name="daily_plan_items",
     )
-    plan = models.ForeignKey(DailyPlan, on_delete=models.CASCADE, related_name="items")
-    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="plan_items")
+    plan = models.ForeignKey(DailyPlan, on_delete=models.RESTRICT, related_name="items")
+    task = models.ForeignKey(Task, on_delete=models.RESTRICT, related_name="plan_items")
     kind = models.CharField(max_length=12, choices=Kind.choices, default=Kind.SECONDARY)
     position = models.PositiveIntegerField(default=0)
     state = models.CharField(
@@ -326,20 +326,20 @@ class PlanningEvent(models.Model):
     )
     event_type = models.CharField(max_length=20, choices=EventType.choices)
     task = models.ForeignKey(
-        Task, null=True, on_delete=models.SET_NULL, related_name="planning_events"
+        Task, null=True, on_delete=models.RESTRICT, related_name="planning_events"
     )
     source_item = models.ForeignKey(
         DailyPlanItem,
         null=True,
         blank=True,
-        on_delete=models.SET_NULL,
+        on_delete=models.RESTRICT,
         related_name="source_events",
     )
     destination_item = models.ForeignKey(
         DailyPlanItem,
         null=True,
         blank=True,
-        on_delete=models.SET_NULL,
+        on_delete=models.RESTRICT,
         related_name="destination_events",
     )
     snapshot = models.JSONField(default=dict)

@@ -19,14 +19,18 @@ T0 = datetime(2026, 11, 20, 9, 0, tzinfo=UTC)
 
 
 def migrate(planning_migration):
-    """Move only planning; keep every other app at its latest migration."""
-    executor = MigrationExecutor(connection)
-    executor.loader.build_graph()
-    targets = [
-        node for node in executor.loader.graph.leaf_nodes() if node[0] != "planning"
-    ] + [("planning", planning_migration)]
-    executor.migrate(targets)
-    return executor.loader.project_state(targets).apps
+    """Move planning to ``planning_migration``.
+
+    Later migrations of other apps that depend on newer planning migrations
+    (such as the Phase 0 restrict migrations) are unapplied along with it; the
+    test re-applies every app at the end.
+    """
+    MigrationExecutor(connection).migrate([("planning", planning_migration)])
+    return (
+        MigrationExecutor(connection)
+        ._create_project_state(with_applied_migrations=True)
+        .apps
+    )
 
 
 def task_rows(apps, terminal_field):

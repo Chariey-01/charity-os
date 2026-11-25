@@ -57,7 +57,7 @@ class ScheduleEntry(models.Model):
         Area,
         null=True,
         blank=True,
-        on_delete=models.SET_NULL,
+        on_delete=models.RESTRICT,
         related_name="schedule_entries",
     )
     area_label_snapshot = models.CharField(max_length=80, blank=True, default="")
@@ -75,28 +75,28 @@ class ScheduleEntry(models.Model):
         Task,
         null=True,
         blank=True,
-        on_delete=models.SET_NULL,
+        on_delete=models.RESTRICT,
         related_name="schedule_entries",
     )
     roadmap_node = models.ForeignKey(
         RoadmapNode,
         null=True,
         blank=True,
-        on_delete=models.SET_NULL,
+        on_delete=models.RESTRICT,
         related_name="schedule_entries",
     )
     focus_session = models.OneToOneField(
         FocusSession,
         null=True,
         blank=True,
-        on_delete=models.SET_NULL,
+        on_delete=models.RESTRICT,
         related_name="schedule_entry",
     )
     rescheduled_from = models.OneToOneField(
         "self",
         null=True,
         blank=True,
-        on_delete=models.SET_NULL,
+        on_delete=models.RESTRICT,
         related_name="rescheduled_to",
     )
     actual_started_at = models.DateTimeField(null=True, blank=True)

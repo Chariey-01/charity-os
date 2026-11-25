@@ -85,17 +85,29 @@ def test_migration_0009_is_state_only():
 
 
 def migrate(planning_target):
+    """Move planning; dependants in other apps follow (Django's plan)."""
+    MigrationExecutor(connection).migrate([("planning", planning_target)])
+    return (
+        MigrationExecutor(connection)
+        ._create_project_state(with_applied_migrations=True)
+        .apps
+    )
+
+
+def migrate_all_forward():
     executor = MigrationExecutor(connection)
-    executor.loader.build_graph()
-    targets = [
-        node for node in executor.loader.graph.leaf_nodes() if node[0] != "planning"
-    ] + [("planning", planning_target)]
-    executor.migrate(targets)
-    return executor.loader.project_state(targets).apps
+    executor.migrate(executor.loader.graph.leaf_nodes())
 
 
 @pytest.mark.django_db(transaction=True)
 def test_migration_0009_round_trips_existing_events():
+    try:
+        check_0009_round_trip()
+    finally:
+        migrate_all_forward()
+
+
+def check_0009_round_trip():
     apps = migrate("0009_planningevent_archive_events")
     User = apps.get_model("users", "User")
     Task = apps.get_model("planning", "Task")
