@@ -1,10 +1,9 @@
 # Migration ledger
 
-Every migration that changes data or constraints, in apply order, with its dependencies and rollback notes. Always take a `pg_dump` before `migrate` in any environment that holds real records.
+Every migration that changes data or constraints, in apply order, with its dependencies and rollback notes. In any environment that holds real records, migrate only through the wrapper. It takes a verified `pre-migrate` backup and refuses to migrate if that backup fails ([backup and restore](operations/backup-and-restore.md)):
 
 ```bash
-pg_dump --format=custom --file=charityos-$(date +%F).dump "$DATABASE"
-(cd backend && ../.venv/bin/python manage.py migrate --noinput)
+ops/db/migrate-with-backup.sh            # database from POSTGRES_DB
 ```
 
 ## Mobile scheduler (merged into `main` at `4ad209d`)

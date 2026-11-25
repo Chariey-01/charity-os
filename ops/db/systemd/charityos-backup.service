@@ -1,0 +1,14 @@
+# Nightly CharityOS backup. Designed but NOT installed: install only with the
+# owner's approval, after manual backup and restore have passed.
+# See docs/operations/backup-and-restore.md.
+[Unit]
+Description=CharityOS PostgreSQL backup (ops/db/backup.sh)
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Progress_tracker
+ExecStart=%h/Progress_tracker/ops/db/backup.sh --database charityos --label scheduled
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=yes

@@ -1,0 +1,11 @@
+# Runs charityos-backup.service every night. Designed but NOT installed.
+[Unit]
+Description=Nightly CharityOS PostgreSQL backup
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+RandomizedDelaySec=15m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
