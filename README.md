@@ -32,6 +32,8 @@ python3 -m venv .venv
 
 The private developer cluster on the original implementation machine listens on `localhost:5433`; set `POSTGRES_PORT=5433` there. This is local guidance, not a production default. Never alter the system PostgreSQL cluster on 5432 for this project. A configured test role must be able to create test databases.
 
+Each checkout runs its tests in its own database, `test_charityos_<hash of the checkout path>`, which pytest creates at the start of a run and drops at the end. Two checkouts can therefore test at the same time without touching each other. To run a second suite in the same checkout, set `CHARITYOS_TEST_DB=test_<name>`. The old shared `test_charityos` is refused, as is any name without the `test_` prefix. Pass `--reuse-db` yourself only when you know the schema has not changed.
+
 Create the first local account without storing a password in source control:
 
 ```bash
