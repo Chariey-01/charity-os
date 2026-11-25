@@ -1,10 +1,12 @@
 from django.contrib import admin
 
+from config.admin_safety import NoHardDeleteAdmin
+
 from .models import Area, DailyCapacity
 
 
 @admin.register(Area)
-class AreaAdmin(admin.ModelAdmin):
+class AreaAdmin(NoHardDeleteAdmin, admin.ModelAdmin):
     list_display = ("name", "user", "slug", "sort_order", "archived_at")
     list_filter = ("archived_at",)
     search_fields = ("name", "slug", "user__email")
@@ -12,7 +14,7 @@ class AreaAdmin(admin.ModelAdmin):
 
 
 @admin.register(DailyCapacity)
-class DailyCapacityAdmin(admin.ModelAdmin):
+class DailyCapacityAdmin(NoHardDeleteAdmin, admin.ModelAdmin):
     list_display = (
         "local_date",
         "user",

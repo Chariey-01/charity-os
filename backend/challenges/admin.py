@@ -1,10 +1,12 @@
 from django.contrib import admin
 
+from config.admin_safety import NoHardDeleteAdmin
+
 from .models import Challenge
 
 
 @admin.register(Challenge)
-class ChallengeAdmin(admin.ModelAdmin):
+class ChallengeAdmin(NoHardDeleteAdmin, admin.ModelAdmin):
     list_display = (
         "name",
         "user",
