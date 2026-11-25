@@ -98,7 +98,7 @@ Timed exercise starts/uses a normal focus session and associates an exercise log
 
 Daily and challenge reports are live-derived and may change after late writes. Closing a reflection/review records only subjective closure; it does not freeze analytics. The 96-day endpoint does not create a snapshot/export.
 
-Health-log and reflection DELETE operations are explicit permanent deletion. Account erasure is a separately protected operation to be specified operationally before external beta; it cascades active user-owned database rows.
+Health logs and reflections are archived, not deleted (see [Archive, removal and erasure](#archive-removal-and-erasure-implemented-phase-0a)). Permanent deletion exists only as whole-account erasure through the dry-run-first `manage.py erase_user` command.
 
 ## Deferred contract surface
 
@@ -139,4 +139,51 @@ Tasks use the workflow `backlog`, `todo`, `in_progress`, `in_review`, `blocked`,
   - The legacy input values `planned`, `completed` and `skipped` are still accepted.
   - Responses include a deprecated read-only `legacy_status` (`planned`, `completed` or `skipped`) for one release.
 - **Breaking:** response `status` values and the `cancelled_at` field name changed. See [migrations.md](migrations.md).
+
+## Archive, removal and erasure (implemented, Phase 0A)
+
+Records with history are never deleted through the API (owner decisions 4.1–4.3, 25 Nov 2026).
+
+| Resources | DELETE | Instead |
+|---|---|---|
+| `/areas`, `/tasks`, `/challenges`, `/roadmaps`, `/roadmap-nodes`, `/roadmap-resources`, `/evidence`, `/accomplishments`, `/sleep-logs`, `/exercise-logs`, `/meal-logs`, `/water`, `/nutrition`, `/daily-reflections`, `/weekly-reviews` | `405`, `error.code = "archive_instead"` | `POST /<resource>/<id>/archive`, `POST /<resource>/<id>/restore` |
+| `/daily-plan-items` | `405`, `"remove_instead"` | `POST /daily-plan-items/<id>/remove` (optional `reason`) |
+| `/daily-plans`, `/capacities` | `405`, `"edit_instead"` | `PATCH` |
+| `/roadmap-prerequisites` | `204` | Prerequisite links are pure structure and stay deletable |
+| `/sessions`, `/schedule-entries` | `405` (unchanged) | Cancel, finish or correct |
+
+For a refused DELETE, the `Allow` header leaves out `DELETE`.
+
+**Archiving:**
+
+- Archive and restore lock the row and are idempotent. Restoring a record whose name is now used by an active record answers `409` with code `restore_conflict`.
+- Archiving a task appends an `archived` planning event; restoring appends `restored`.
+- Archiving a challenge ends its primacy but keeps its status. An archived challenge cannot be made primary.
+- Archiving a roadmap node archives its not-yet-archived descendants with the same timestamp. Restoring brings back exactly those. A node under an archived parent cannot be restored: `409`, code `parent_archived`.
+- `archived_at` is read-only. Sending it in a create or update is rejected with a field error.
+
+**Lists and working views:**
+
+- Lists accept `?archived=exclude|include|only`, defaulting to `exclude`. Any other value is a `400`. Detail endpoints return archived records too.
+- Working views leave archived records out:
+  - Today's plan items and tasks;
+  - next actions, where an archived prerequisite no longer blocks;
+  - roadmap progress;
+  - the roadmap tree, unless `?archived=include`;
+  - the metrics roadmap list.
+
+**Tracked time is never removed:** Insights, metrics and a node's `time_invested_seconds` still count archived tasks, categories, nodes and health logs.
+
+**Plan items:**
+
+- `remove` moves a current item to `removed` and appends a `removed` planning event.
+- A plan item's `state` is read-only. Writing it is rejected with a field error naming `remove` and `carry-over`.
+
+**Deletes blocked by history:** if a delete ever reaches a record that still has history, it answers `409` with code `has_history`. `error.blocking` lists the kinds and counts of what still points at it.
+
+**Erasure:**
+
+- Permanent deletion of an account and everything it owns is `manage.py erase_user EMAIL`. It is a dry run unless `--confirm EMAIL` repeats the address, and it runs in one transaction.
+- It refuses, or rolls back, if anything outside the account would change, or if what it removes differs from the plan it showed.
+- Django admin cannot delete records.
 
