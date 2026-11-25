@@ -555,9 +555,9 @@ function History() {
       // History keeps records after they are archived.
       api<Task[]>("/tasks?archived=include"),
       api<{ title: string; duration_seconds: number | null; outcome: string; status: string }[]>("/sessions"),
-      api<{ kind: string; text: string; url: string }[]>("/evidence"),
-      api<{ title: string; local_date: string }[]>("/accomplishments"),
-      api<{ local_date: string; went_well: string }[]>("/daily-reflections"),
+      api<{ kind: string; text: string; url: string }[]>("/evidence?archived=include"),
+      api<{ title: string; local_date: string }[]>("/accomplishments?archived=include"),
+      api<{ local_date: string; went_well: string }[]>("/daily-reflections?archived=include"),
     ])
       .then(([tasks, sessions, evidence, wins, reflections]) =>
         setEntries([

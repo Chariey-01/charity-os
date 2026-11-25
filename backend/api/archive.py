@@ -29,6 +29,12 @@ class RestoreConflict(CodedAPIException):
     )
 
 
+class ParentArchived(CodedAPIException):
+    status_code = 409
+    default_code = "parent_archived"
+    default_detail = "Restore the parent first; this record is archived under it."
+
+
 def filter_archived(queryset, value, field="archived_at"):
     value = value or "exclude"
     if value not in ARCHIVED_FILTER_VALUES:

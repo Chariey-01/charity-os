@@ -45,11 +45,17 @@ from roadmaps.models import (
     RoadmapNodePrerequisite,
     RoadmapResource,
 )
-from roadmaps.services import next_actions, roadmap_tree
+from roadmaps.services import (
+    ParentArchivedError,
+    archive_node,
+    next_actions,
+    restore_node,
+    roadmap_tree,
+)
 from scheduling.services import sync_entry_from_session
 
 from . import serializers as s
-from .archive import ArchivableMixin
+from .archive import ArchivableMixin, ParentArchived
 
 
 @api_view(["GET"])
@@ -119,10 +125,10 @@ class OwnedViewSet(viewsets.ModelViewSet):
         serializer.save(user=self.request.user)
 
 
-def owned_viewset(name, model, serializer):
+def owned_viewset(name, model, serializer, *mixins):
     return type(
         name,
-        (OwnedViewSet,),
+        (*mixins, OwnedViewSet),
         {"queryset": model.objects.all(), "serializer_class": serializer},
     )
 
@@ -226,7 +232,9 @@ class CapacityViewSet(CapacityViewSet):
 
 
 DailyPlanViewSet = owned_viewset("DailyPlanViewSet", DailyPlan, s.DailyPlanSerializer)
-RoadmapViewSet = owned_viewset("RoadmapViewSet", Roadmap, s.RoadmapSerializer)
+RoadmapViewSet = owned_viewset(
+    "RoadmapViewSet", Roadmap, s.RoadmapSerializer, ArchivableMixin
+)
 
 
 class RoadmapViewSet(RoadmapViewSet):
@@ -236,10 +244,14 @@ class RoadmapViewSet(RoadmapViewSet):
 
     @action(detail=True, methods=["get"])
     def tree(self, request, pk=None):
+        archived = request.query_params.get("archived", "exclude")
+        if archived not in ("exclude", "include"):
+            raise serializers.ValidationError({"archived": ["Use exclude or include."]})
+        roadmap = self.get_object()
         return Response(
             {
-                "roadmap": self.get_serializer(self.get_object()).data,
-                "nodes": roadmap_tree(self.get_object()),
+                "roadmap": self.get_serializer(roadmap).data,
+                "nodes": roadmap_tree(roadmap, include_archived=archived == "include"),
             }
         )
 
@@ -310,35 +322,65 @@ class DailyPlanViewSet(DailyPlanViewSet):
         )
 
 
-RoadmapNodeViewSet = owned_viewset(
-    "RoadmapNodeViewSet", RoadmapNode, s.RoadmapNodeSerializer
-)
+class RoadmapNodeViewSet(ArchivableMixin, OwnedViewSet):
+    queryset = RoadmapNode.objects.all()
+    serializer_class = s.RoadmapNodeSerializer
+
+    def archive_service(self, user, instance):
+        return archive_node(user=user, node=instance)
+
+    def restore_service(self, user, instance):
+        try:
+            return restore_node(user=user, node=instance)
+        except ParentArchivedError as exc:
+            raise ParentArchived() from exc
+
+
+# Prerequisite links are pure structure with no history of their own, so they
+# remain directly deletable (owner decision 4.2).
 RoadmapPrerequisiteViewSet = owned_viewset(
     "RoadmapPrerequisiteViewSet",
     RoadmapNodePrerequisite,
     s.RoadmapPrerequisiteSerializer,
 )
 RoadmapResourceViewSet = owned_viewset(
-    "RoadmapResourceViewSet", RoadmapResource, s.RoadmapResourceSerializer
+    "RoadmapResourceViewSet",
+    RoadmapResource,
+    s.RoadmapResourceSerializer,
+    ArchivableMixin,
 )
-EvidenceViewSet = owned_viewset("EvidenceViewSet", Evidence, s.EvidenceSerializer)
+EvidenceViewSet = owned_viewset(
+    "EvidenceViewSet", Evidence, s.EvidenceSerializer, ArchivableMixin
+)
 AccomplishmentViewSet = owned_viewset(
-    "AccomplishmentViewSet", Accomplishment, s.AccomplishmentSerializer
+    "AccomplishmentViewSet",
+    Accomplishment,
+    s.AccomplishmentSerializer,
+    ArchivableMixin,
 )
-SleepLogViewSet = owned_viewset("SleepLogViewSet", SleepLog, s.SleepLogSerializer)
+SleepLogViewSet = owned_viewset(
+    "SleepLogViewSet", SleepLog, s.SleepLogSerializer, ArchivableMixin
+)
 ExerciseLogViewSet = owned_viewset(
-    "ExerciseLogViewSet", ExerciseLog, s.ExerciseLogSerializer
+    "ExerciseLogViewSet", ExerciseLog, s.ExerciseLogSerializer, ArchivableMixin
 )
-MealLogViewSet = owned_viewset("MealLogViewSet", MealLog, s.MealLogSerializer)
-WaterViewSet = owned_viewset("WaterViewSet", DailyWaterTotal, s.WaterSerializer)
+MealLogViewSet = owned_viewset(
+    "MealLogViewSet", MealLog, s.MealLogSerializer, ArchivableMixin
+)
+WaterViewSet = owned_viewset(
+    "WaterViewSet", DailyWaterTotal, s.WaterSerializer, ArchivableMixin
+)
 NutritionViewSet = owned_viewset(
-    "NutritionViewSet", DailyNutritionRating, s.NutritionSerializer
+    "NutritionViewSet", DailyNutritionRating, s.NutritionSerializer, ArchivableMixin
 )
 DailyReflectionViewSet = owned_viewset(
-    "DailyReflectionViewSet", DailyReflection, s.DailyReflectionSerializer
+    "DailyReflectionViewSet",
+    DailyReflection,
+    s.DailyReflectionSerializer,
+    ArchivableMixin,
 )
 WeeklyReviewViewSet = owned_viewset(
-    "WeeklyReviewViewSet", WeeklyReview, s.WeeklyReviewSerializer
+    "WeeklyReviewViewSet", WeeklyReview, s.WeeklyReviewSerializer, ArchivableMixin
 )
 
 
@@ -634,7 +676,9 @@ def metrics(request):
                 (exercise.ended_at - exercise.started_at).total_seconds() // 60
             )
     roadmaps = []
-    for roadmap in Roadmap.objects.filter(user=request.user).order_by("title"):
+    for roadmap in Roadmap.objects.filter(
+        user=request.user, archived_at__isnull=True
+    ).order_by("title"):
         progress = roadmap.progress()
         roadmaps.append({"id": str(roadmap.id), "title": roadmap.title, **progress})
     challenge = Challenge.objects.filter(

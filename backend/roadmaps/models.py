@@ -31,15 +31,15 @@ class Roadmap(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     def progress(self):
-        eligible = self.nodes.filter(node_type="item").exclude(state="skipped")
+        # Archived items have left the roadmap and do not count either way.
+        items = self.nodes.filter(node_type="item", archived_at__isnull=True)
+        eligible = items.exclude(state="skipped")
         total = eligible.count()
         completed = eligible.filter(state="completed").count()
         return {
             "completed_eligible_items": completed,
             "eligible_items": total,
-            "skipped_items": self.nodes.filter(
-                node_type="item", state="skipped"
-            ).count(),
+            "skipped_items": items.filter(state="skipped").count(),
             "progress_ratio": completed / total if total else 0,
         }
 
