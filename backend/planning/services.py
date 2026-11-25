@@ -171,3 +171,35 @@ def restore_task(*, user, task):
         snapshot={"title": task.title, "status": task.status},
     )
     return task
+
+
+@transaction.atomic
+def remove_plan_item(*, user, item, reason=""):
+    """Take an item off its plan without deleting anything.
+
+    The item stays in the plan's history in state "removed" and a REMOVED
+    event records it. Only a current item can be removed; removing a removed
+    item changes nothing.
+    """
+    item = (
+        DailyPlanItem.objects.select_for_update(of=("self",))
+        .select_related("plan", "task")
+        .get(pk=item.pk, user=user)
+    )
+    if item.state == DailyPlanItem.State.REMOVED:
+        return item
+    if item.state != DailyPlanItem.State.CURRENT:
+        raise ValidationError("Only a current plan item can be removed.")
+    item.state = DailyPlanItem.State.REMOVED
+    item.save(update_fields=("state", "updated_at"))
+    snapshot = {"title": item.title_snapshot, "date": str(item.plan.local_date)}
+    if reason.strip():
+        snapshot["reason"] = reason.strip()
+    PlanningEvent.objects.create(
+        user=user,
+        event_type=PlanningEvent.EventType.REMOVED,
+        task=item.task,
+        source_item=item,
+        snapshot=snapshot,
+    )
+    return item

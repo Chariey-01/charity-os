@@ -34,6 +34,7 @@ from planning.services import (
     add_plan_item,
     archive_task,
     carry_over,
+    remove_plan_item,
     restore_task,
     transition_task,
 )
@@ -55,7 +56,12 @@ from roadmaps.services import (
 from scheduling.services import sync_entry_from_session
 
 from . import serializers as s
-from .archive import ArchivableMixin, ParentArchived
+from .archive import ArchivableMixin, NoDeleteMixin, ParentArchived
+
+EDIT_INSTEAD = (
+    "edit_instead",
+    "Daily plans and capacities are kept as history; edit them instead.",
+)
 
 
 @api_view(["GET"])
@@ -214,11 +220,13 @@ class AreaViewSet(ArchivableMixin, OwnedViewSet):
 
 
 CapacityViewSet = owned_viewset(
-    "CapacityViewSet", DailyCapacity, s.DailyCapacitySerializer
+    "CapacityViewSet", DailyCapacity, s.DailyCapacitySerializer, NoDeleteMixin
 )
 
 
 class CapacityViewSet(CapacityViewSet):
+    delete_instead = EDIT_INSTEAD
+
     def create(self, request, *args, **kwargs):
         existing = DailyCapacity.objects.filter(
             user=request.user, local_date=request.data.get("local_date")
@@ -231,7 +239,9 @@ class CapacityViewSet(CapacityViewSet):
         return super().create(request, *args, **kwargs)
 
 
-DailyPlanViewSet = owned_viewset("DailyPlanViewSet", DailyPlan, s.DailyPlanSerializer)
+DailyPlanViewSet = owned_viewset(
+    "DailyPlanViewSet", DailyPlan, s.DailyPlanSerializer, NoDeleteMixin
+)
 RoadmapViewSet = owned_viewset(
     "RoadmapViewSet", Roadmap, s.RoadmapSerializer, ArchivableMixin
 )
@@ -265,6 +275,8 @@ class RoadmapViewSet(RoadmapViewSet):
 
 
 class DailyPlanViewSet(DailyPlanViewSet):
+    delete_instead = EDIT_INSTEAD
+
     @action(detail=False, methods=["get"])
     def today(self, request):
         requested = request.query_params.get("date")
@@ -440,9 +452,23 @@ class TaskViewSet(ArchivableMixin, OwnedViewSet):
         )
 
 
-class PlanItemViewSet(OwnedViewSet):
+class PlanItemViewSet(NoDeleteMixin, OwnedViewSet):
     queryset = DailyPlanItem.objects.all()
     serializer_class = s.DailyPlanItemSerializer
+    delete_instead = (
+        "remove_instead",
+        "Plan items are kept as history. "
+        "Use POST /api/v1/daily-plan-items/<id>/remove.",
+    )
+
+    @action(detail=True, methods=["post"])
+    def remove(self, request, pk=None):
+        item = remove_plan_item(
+            user=request.user,
+            item=self.get_object(),
+            reason=str(request.data.get("reason", "") or ""),
+        )
+        return Response(self.get_serializer(item).data)
 
     def perform_create(self, serializer):
         data = serializer.validated_data

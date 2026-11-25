@@ -71,9 +71,27 @@ ChallengeSerializer = serializer_for(Challenge)
 AreaSerializer = serializer_for(Area)
 DailyCapacitySerializer = serializer_for(DailyCapacity)
 DailyPlanSerializer = serializer_for(DailyPlan)
-DailyPlanItemSerializer = serializer_for(
-    DailyPlanItem, read_only=("title_snapshot", "area_label_snapshot")
-)
+
+
+class DailyPlanItemSerializer(
+    serializer_for(
+        DailyPlanItem, read_only=("title_snapshot", "area_label_snapshot", "state")
+    )
+):
+    """``state`` changes only through actions that write planning history
+    (carry-over, remove), never through a plain write."""
+
+    def to_internal_value(self, data):
+        if "state" in data:
+            raise serializers.ValidationError(
+                {
+                    "state": [
+                        "Use POST .../remove or .../carry-over to change this item's "
+                        "state."
+                    ]
+                }
+            )
+        return super().to_internal_value(data)
 
 
 class TaskSerializer(OwnedModelSerializer):
