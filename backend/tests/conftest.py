@@ -4,7 +4,7 @@ import pytest
 from django.conf import settings
 from django.db import connection
 
-from tests.opsdb import major
+from tests.opsdb import major, psql
 
 
 @pytest.fixture
@@ -27,3 +27,22 @@ def pg_env(django_db_blocker):
         "PGPASSWORD": db["PASSWORD"],
         "CHARITYOS_PYTHON": sys.executable,
     }
+
+
+@pytest.fixture
+def restored_databases(pg_env):
+    """Databases a test restores into, as (name, owner token) pairs.
+
+    Afterwards each is dropped, but only if its COMMENT carries the token the
+    test generated, i.e. only databases the test itself created.
+    """
+    created = []
+    yield created
+    for target, token in created:
+        comment = psql(
+            pg_env,
+            "SELECT coalesce(shobj_description(oid, 'pg_database'), '') "
+            f"FROM pg_database WHERE datname = '{target}'",
+        )
+        if f"owner-token={token}" in comment:
+            psql(pg_env, f'DROP DATABASE "{target}"')
