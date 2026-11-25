@@ -132,3 +132,42 @@ def transition_task(*, user, task, target, reason=""):
         snapshot=snapshot,
     )
     return task
+
+
+@transaction.atomic
+def archive_task(*, user, task):
+    """Hide a task from working views. Nothing is deleted.
+
+    Its plan items, focus sessions, schedule entries, evidence and history
+    stay linked and keep counting wherever they counted before. Idempotent:
+    archiving an archived task changes nothing and writes no event.
+    """
+    task = Task.objects.select_for_update().get(pk=task.pk, user=user)
+    if task.archived_at is not None:
+        return task
+    task.archived_at = timezone.now()
+    task.save(update_fields=("archived_at", "updated_at"))
+    PlanningEvent.objects.create(
+        user=user,
+        event_type=PlanningEvent.EventType.ARCHIVED,
+        task=task,
+        snapshot={"title": task.title, "status": task.status},
+    )
+    return task
+
+
+@transaction.atomic
+def restore_task(*, user, task):
+    """Return an archived task to working views. Idempotent."""
+    task = Task.objects.select_for_update().get(pk=task.pk, user=user)
+    if task.archived_at is None:
+        return task
+    task.archived_at = None
+    task.save(update_fields=("archived_at", "updated_at"))
+    PlanningEvent.objects.create(
+        user=user,
+        event_type=PlanningEvent.EventType.RESTORED,
+        task=task,
+        snapshot={"title": task.title, "status": task.status},
+    )
+    return task
