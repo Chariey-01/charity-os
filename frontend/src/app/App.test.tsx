@@ -10,6 +10,23 @@ test("shows login when unauthenticated", async () => {
   expect(await screen.findByRole("button", { name: "Sign in" })).toBeInTheDocument();
 });
 
+test("a locked-out sign-in shows the server's message, after fetching a CSRF token", async () => {
+  const locked = { detail: "Too many failed sign-in attempts. Wait 15 minutes, then try again.", error: { code: "too_many_attempts", message: "Too many failed sign-in attempts. Wait 15 minutes, then try again." } };
+  const api = mockApi({
+    "/me": json({ detail: "Authentication credentials were not provided." }, 403),
+    "/auth/csrf": { csrf_token: "t" },
+    "POST /auth/login": json(locked, 429),
+  });
+  render(<App />);
+  fireEvent.change(await screen.findByLabelText("Email"), { target: { value: "owner@example.com" } });
+  fireEvent.change(screen.getByLabelText("Password"), { target: { value: "wrong" } });
+  fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+  expect(await screen.findByText(/Too many failed sign-in attempts/)).toBeInTheDocument();
+  const paths = api.calls.map((call) => `${call.method} ${call.path}`);
+  expect(paths.indexOf("GET /auth/csrf")).toBeLessThan(paths.indexOf("POST /auth/login"));
+});
+
 test("shows an offline state instead of the login form when the server is unreachable", async () => {
   vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("Failed to fetch"));
   render(<App />);
