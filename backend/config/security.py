@@ -12,6 +12,8 @@ import logging
 
 from django.http import JsonResponse
 
+from config.proxies import client_ip
+
 security_log = logging.getLogger("charityos.security")
 
 LOCKOUT_MESSAGE = "Too many failed sign-in attempts. Wait 15 minutes, then try again."
@@ -77,7 +79,7 @@ def security_event(
     if email is not None:
         parts["email"] = mask_email(email)
     if request is not None:
-        parts["ip"] = mask_ip(request.META.get("REMOTE_ADDR"))
+        parts["ip"] = mask_ip(client_ip(request))
         parts["path"] = request.path
     parts.update({key: value for key, value in fields.items() if value is not None})
     security_log.log(

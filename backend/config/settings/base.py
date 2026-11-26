@@ -4,6 +4,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from config.proxies import parse_trusted_proxies
+
 BASE_DIR = Path(__file__).resolve().parents[2]
 load_dotenv(BASE_DIR.parent / ".env")
 
@@ -66,6 +68,12 @@ AXES_DISABLE_ACCESS_LOG = True
 # Masked in the form data axes stores with each failed attempt (it always
 # masks the password). The admin form's CSRF token is a secret of that browser.
 AXES_SENSITIVE_PARAMETERS = ["username", "ip_address", "csrfmiddlewaretoken"]
+# The client address for lockouts and the security log (config/proxies.py).
+# Forwarded headers are believed only from these proxies; empty = none.
+CHARITYOS_TRUSTED_PROXIES = parse_trusted_proxies(
+    os.environ.get("CHARITYOS_TRUSTED_PROXIES", "")
+)
+AXES_CLIENT_IP_CALLABLE = "config.proxies.axes_client_ip"
 ROOT_URLCONF = "config.urls"
 TEMPLATES = [
     {
