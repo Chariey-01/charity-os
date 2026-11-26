@@ -26,7 +26,7 @@ Properties:
 
 The root is `~/charityos-backups` unless `--root` or `CHARITYOS_BACKUP_ROOT` says otherwise.
 
-Connection settings come from the PG* variables if they are set. Otherwise they come from `POSTGRES_*` in the environment or in the checkout's `.env`. That file is parsed, never executed.
+Connection settings come from the PG* variables if they are set. Otherwise they come from `POSTGRES_*` in the environment or in the checkout's `.env`. That file is parsed, never executed. Whichever server that selects is also passed to every `manage.py` step (check, migrate), so a backup and the migration after it always reach the same server.
 
 ## Retention
 

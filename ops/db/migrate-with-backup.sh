@@ -41,6 +41,14 @@ BACKUP="$(sed -n 's/^BACKUP=//p' <<<"$OUTPUT")"
 [[ -n "$BACKUP" && -f "$BACKUP/SHA256SUMS" ]] || die "backup produced no result; NOT migrating $DATABASE"
 log "backup: $BACKUP"
 
+# The backup went through libpq (PG*). Prove Django would migrate that same
+# database on that same server before letting it write anything.
+EXPECTED="$(psql_ro "$DATABASE" "$IDENTITY_SQL")" || die "cannot read the identity of $DATABASE; NOT migrating"
+ACTUAL="$(django_identity "$DATABASE" || true)"
+[[ -n "$ACTUAL" ]] || die "Django could not connect to $DATABASE; NOT migrating. Backup: $BACKUP"
+[[ "$ACTUAL" == "$EXPECTED" ]] ||
+  refuse "Django would migrate '$ACTUAL' but the backup came from '$EXPECTED'; NOT migrating. Backup: $BACKUP"
+log "target confirmed: Django and the backup both reach $EXPECTED"
 log "step 2/2: manage.py migrate on $DATABASE"
 PYTHON="$(python_for_django)"
 if ! (cd "$REPO_ROOT/backend" && POSTGRES_DB="$DATABASE" "$PYTHON" manage.py migrate --noinput "${EXTRA[@]}"); then

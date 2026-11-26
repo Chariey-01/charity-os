@@ -45,6 +45,19 @@ load_connection_env() {
   if [[ -z "${PGPASSWORD:-}" && -n "${POSTGRES_PASSWORD:-}" ]]; then
     export PGPASSWORD="$POSTGRES_PASSWORD"
   fi
+  # Production settings prefer DATABASE_URL over POSTGRES_*, so with it set a
+  # manage.py step could reach a different server than pg_dump. Refuse rather
+  # than guess which one was meant.
+  if [[ -n "${DATABASE_URL:-}" ]]; then
+    refuse "DATABASE_URL is set; ops/db scripts use PG*/POSTGRES_* only. Unset DATABASE_URL and name the server with PGHOST/PGPORT."
+  fi
+  # Django reads POSTGRES_*, libpq reads PG*. Point both at the one server chosen
+  # above, so a backup and the migrate or check that follows it can never reach
+  # different servers.
+  export POSTGRES_HOST="$PGHOST" POSTGRES_PORT="$PGPORT" POSTGRES_USER="$PGUSER"
+  if [[ -n "${PGPASSWORD:-}" ]]; then
+    export POSTGRES_PASSWORD="$PGPASSWORD"
+  fi
   export PGCONNECT_TIMEOUT="${PGCONNECT_TIMEOUT:-10}"
 }
 
@@ -147,6 +160,23 @@ SELECT kind || E'\t' || total FROM (
 SQL
 
 MIGRATIONS_SQL="SELECT app || E'\t' || name FROM django_migrations ORDER BY app, name;"
+
+# One line that identifies the exact database on the exact running server:
+# name, database OID and the server's start time. Two servers never share all
+# three, and a restart in between changes it, so equal identities seen through
+# libpq and through Django mean both reach the same database.
+IDENTITY_SQL="SELECT current_database() || '|' || (SELECT oid FROM pg_database WHERE datname = current_database()) || '|' || extract(epoch FROM pg_postmaster_start_time())::text"
+
+# The identity of the database Django connects to with POSTGRES_DB=$1.
+django_identity() {
+  local python
+  python="$(python_for_django)"
+  (cd "$REPO_ROOT/backend" && POSTGRES_DB="$1" "$python" manage.py shell -c \
+    "from django.db import connection
+with connection.cursor() as cursor:
+    cursor.execute(\"$IDENTITY_SQL\")
+    print('IDENTITY=' + cursor.fetchone()[0])" | sed -n 's/^IDENTITY=//p' | tail -1)
+}
 
 manifest_value() { sed -n "s/^$2=//p" "$1/MANIFEST" | head -1; }
 
