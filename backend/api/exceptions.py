@@ -4,7 +4,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError
 from django.db.models import ProtectedError, RestrictedError
-from rest_framework.exceptions import APIException, MethodNotAllowed
+from rest_framework.exceptions import APIException, MethodNotAllowed, PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import exception_handler as drf_exception_handler
 
@@ -40,12 +40,28 @@ def _blocking(objects):
     return [{"model": name, "count": count} for name, count in sorted(counts.items())]
 
 
+def _log_csrf_rejection(exc, context):
+    if isinstance(exc, PermissionDenied) and str(exc.detail).startswith("CSRF Failed"):
+        import logging
+
+        from config.security import security_event
+
+        request = context.get("request")
+        security_event(
+            "csrf_rejected",
+            request=getattr(request, "_request", request),
+            method=getattr(request, "method", None),
+            level=logging.WARNING,
+        )
+
+
 def exception_handler(exc, context):
     """Return structured JSON for domain errors raised by services.
 
     Without this, Django ``ValidationError`` raised inside a service surfaced
     as HTTP 500. ``detail`` is kept for clients that read DRF's default key.
     """
+    _log_csrf_rejection(exc, context)
     if isinstance(exc, DjangoValidationError):
         message, fields = _flatten(exc)
         # Domain errors may carry their own code and status (e.g. 409 conflicts).

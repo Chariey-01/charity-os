@@ -115,6 +115,23 @@ AUTH_USER_MODEL = "users.User"
 # default backend and as auth.W004 with custom backends (django-axes).
 SILENCED_SYSTEM_CHECKS = ["auth.E003", "auth.W004"]
 
+# Security events (Phase 0C, S12): one line each on stderr, which the process
+# manager or platform collects. Emails are masked and IPs truncated by
+# config.security; nothing secret is ever passed to this logger.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "security": {"format": "%(asctime)s %(levelname)s %(name)s %(message)s"}
+    },
+    "handlers": {
+        "security": {"class": "logging.StreamHandler", "formatter": "security"}
+    },
+    "loggers": {
+        "charityos.security": {"handlers": ["security"], "level": "INFO"},
+    },
+}
+
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework.authentication.SessionAuthentication",

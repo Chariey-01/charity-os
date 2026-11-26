@@ -16,6 +16,7 @@ Take a backup first (ops/db/backup.sh); an erasure cannot be undone except
 by restoring that backup into a new database.
 """
 
+import logging
 from collections import Counter, defaultdict
 
 from django.apps import apps
@@ -24,6 +25,8 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import router, transaction
 from django.db.models import ProtectedError, RestrictedError
 from django.db.models.deletion import Collector
+
+from config.security import security_event
 
 
 def _owner_id(obj, user_model):
@@ -146,6 +149,7 @@ class Command(BaseCommand):
             )
             self._show(user, plan)
             if confirm is None:
+                security_event("erasure_dry_run", user=user, rows=sum(plan.values()))
                 self.stdout.write(
                     "DRY RUN: nothing was deleted.\n"
                     "Take a backup first:  ops/db/backup.sh --database <database>\n"
@@ -172,6 +176,13 @@ class Command(BaseCommand):
                     "Rolled back: other accounts' data would have changed. "
                     "Nothing was deleted."
                 )
+        security_event(
+            "user_erased",
+            email=user.email,
+            user_id=user_id,
+            rows=sum(plan.values()),
+            level=logging.WARNING,
+        )
         self.stdout.write(
             self.style.SUCCESS(f"Erased {user.email}: {sum(plan.values())} rows.")
         )
