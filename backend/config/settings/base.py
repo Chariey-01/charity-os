@@ -129,17 +129,40 @@ SILENCED_SYSTEM_CHECKS = ["auth.E003", "auth.W004"]
 # Security events (Phase 0C, S12): one line each on stderr, which the process
 # manager or platform collects. Emails are masked and IPs truncated by
 # config.security; nothing secret is ever passed to this logger.
+#
+# Server errors (unhandled exceptions, DisallowedHost and other
+# django.security errors): one redacted line plus traceback each on stderr
+# (config/error_logging.py). Without this, DEBUG = False wrote them nowhere.
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
     "formatters": {
-        "security": {"format": "%(asctime)s %(levelname)s %(name)s %(message)s"}
+        "security": {"format": "%(asctime)s %(levelname)s %(name)s %(message)s"},
+        "errors": {
+            "()": "config.error_logging.RedactingFormatter",
+            "format": "%(asctime)s %(levelname)s %(name)s %(message)s",
+        },
     },
     "handlers": {
-        "security": {"class": "logging.StreamHandler", "formatter": "security"}
+        "security": {"class": "logging.StreamHandler", "formatter": "security"},
+        "errors": {
+            "class": "logging.StreamHandler",
+            "formatter": "errors",
+            "level": "ERROR",
+        },
     },
     "loggers": {
         "charityos.security": {"handlers": ["security"], "level": "INFO"},
+        "django.request": {
+            "handlers": ["errors"],
+            "level": "ERROR",
+            "propagate": False,
+        },
+        "django.security": {
+            "handlers": ["errors"],
+            "level": "ERROR",
+            "propagate": False,
+        },
     },
 }
 
