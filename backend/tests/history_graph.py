@@ -153,6 +153,9 @@ def build_history(user, registry=current_apps, label="a"):
         end_at=T0 + timedelta(hours=1),
         timezone_name="UTC",
         local_date=DAY,
+        tracking="focus",
+        status="completed",  # mirrors its completed session, as the app keeps it
+        closed_at=T0 + timedelta(hours=1),
     )
     model("health.ExerciseLog").objects.create(
         user=user,
