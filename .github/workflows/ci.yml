@@ -4,12 +4,19 @@ on:
   push:
   pull_request:
 
+# No job needs to write to the repository, and the workflow uses no secrets.
+permissions:
+  contents: read
+
 jobs:
   backend:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       postgres:
-        image: postgres:17-alpine
+        # Same major version as the runner's pg_dump/pg_restore (Ubuntu 24.04
+        # ships 16). With a newer server, tests/conftest.py's pg_env fixture
+        # skips every backup and restore test, by design.
+        image: postgres:16-alpine
         env:
           POSTGRES_DB: charityos_test
           POSTGRES_USER: charityos

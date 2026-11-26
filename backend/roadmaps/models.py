@@ -12,7 +12,7 @@ class Roadmap(models.Model):
     class Status(models.TextChoices):
         ACTIVE = "active", "Active"
         COMPLETED = "completed", "Completed"
-        ARCHIVED = "archived", "Archived"
+        # "archived" was a status until roadmaps.0002; archiving is archived_at.
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
@@ -21,24 +21,25 @@ class Roadmap(models.Model):
     title = models.CharField(max_length=160)
     description = models.TextField(blank=True, default="")
     area = models.ForeignKey(
-        Area, null=True, blank=True, on_delete=models.SET_NULL, related_name="roadmaps"
+        Area, null=True, blank=True, on_delete=models.RESTRICT, related_name="roadmaps"
     )
     status = models.CharField(
         max_length=12, choices=Status.choices, default=Status.ACTIVE
     )
+    archived_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def progress(self):
-        eligible = self.nodes.filter(node_type="item").exclude(state="skipped")
+        # Archived items have left the roadmap and do not count either way.
+        items = self.nodes.filter(node_type="item", archived_at__isnull=True)
+        eligible = items.exclude(state="skipped")
         total = eligible.count()
         completed = eligible.filter(state="completed").count()
         return {
             "completed_eligible_items": completed,
             "eligible_items": total,
-            "skipped_items": self.nodes.filter(
-                node_type="item", state="skipped"
-            ).count(),
+            "skipped_items": items.filter(state="skipped").count(),
             "progress_ratio": completed / total if total else 0,
         }
 
@@ -58,9 +59,15 @@ class RoadmapNode(models.Model):
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="roadmap_nodes"
     )
-    roadmap = models.ForeignKey(Roadmap, on_delete=models.CASCADE, related_name="nodes")
+    roadmap = models.ForeignKey(
+        Roadmap, on_delete=models.RESTRICT, related_name="nodes"
+    )
     parent = models.ForeignKey(
-        "self", null=True, blank=True, on_delete=models.CASCADE, related_name="children"
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.RESTRICT,
+        related_name="children",
     )
     title = models.CharField(max_length=180)
     description = models.TextField(blank=True, default="")
@@ -70,6 +77,7 @@ class RoadmapNode(models.Model):
     )
     position = models.PositiveIntegerField(default=0)
     completed_at = models.DateTimeField(null=True, blank=True)
+    archived_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -120,11 +128,12 @@ class RoadmapResource(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     node = models.ForeignKey(
-        RoadmapNode, on_delete=models.CASCADE, related_name="resources"
+        RoadmapNode, on_delete=models.RESTRICT, related_name="resources"
     )
     label = models.CharField(max_length=120)
     url = models.URLField()
     position = models.PositiveIntegerField(default=0)
+    archived_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         constraints = [

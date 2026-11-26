@@ -26,6 +26,7 @@ class SleepLog(models.Model):
     wake_local_date = models.DateField()
     quality = models.PositiveSmallIntegerField(null=True, blank=True)
     notes = models.TextField(blank=True, default="")
+    archived_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -57,9 +58,10 @@ class ExerciseLog(models.Model):
         FocusSession,
         null=True,
         blank=True,
-        on_delete=models.SET_NULL,
+        on_delete=models.RESTRICT,
         related_name="exercise_log",
     )
+    archived_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -88,6 +90,7 @@ class MealLog(models.Model):
     meal_type = models.CharField(max_length=30)
     description = models.TextField()
     rating = models.PositiveSmallIntegerField(null=True, blank=True)
+    archived_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
 
@@ -99,6 +102,7 @@ class DailyWaterTotal(models.Model):
     local_date = models.DateField()
     timezone_name = models.CharField(max_length=64)
     total_ml = models.PositiveIntegerField(default=0)
+    archived_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         constraints = [
@@ -119,6 +123,7 @@ class DailyNutritionRating(models.Model):
     timezone_name = models.CharField(max_length=64)
     rating = models.PositiveSmallIntegerField()
     notes = models.TextField(blank=True, default="")
+    archived_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         constraints = [

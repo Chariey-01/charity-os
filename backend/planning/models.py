@@ -14,6 +14,11 @@ HEX_COLOR_PATTERN = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 
 class Area(models.Model):
+    class HealthKind(models.TextChoices):
+        NONE = "", "None"
+        EXERCISE = "exercise", "Exercise"
+        SLEEP = "sleep", "Sleep"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -25,12 +30,20 @@ class Area(models.Model):
     color = models.CharField(max_length=7, default="#64748B")
     icon = models.CharField(max_length=50, blank=True, default="")
     sort_order = models.IntegerField(default=0)
+    # Completed activities in exercise/sleep categories feed health history.
+    health_kind = models.CharField(
+        max_length=10, choices=HealthKind.choices, blank=True, default=""
+    )
     archived_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         constraints = [
+            models.CheckConstraint(
+                condition=models.Q(health_kind__in=("", "exercise", "sleep")),
+                name="planning_area_health_kind_valid",
+            ),
             models.UniqueConstraint(
                 "user",
                 Lower("name"),
@@ -141,11 +154,30 @@ class DailyCapacity(models.Model):
             raise ValidationError(errors)
 
 
+OPEN_TASK_STATUSES = ("backlog", "todo", "in_progress", "in_review", "blocked")
+TASK_STATUSES = (*OPEN_TASK_STATUSES, "done", "cancelled")
+
+
 class Task(models.Model):
+    """Work to accomplish: personal tasks today, project work items later.
+
+    Workflow statuses replace planned/completed/skipped (migration 0007,
+    docs/project-workspaces-design.md §13). Only ``done`` and ``cancelled``
+    are terminal and carry a timestamp.
+    """
+
     class Status(models.TextChoices):
-        PLANNED = "planned", "Planned"
-        COMPLETED = "completed", "Completed"
-        SKIPPED = "skipped", "Skipped"
+        BACKLOG = "backlog", "Backlog"
+        TODO = "todo", "To do"
+        IN_PROGRESS = "in_progress", "In progress"
+        IN_REVIEW = "in_review", "In review"
+        BLOCKED = "blocked", "Blocked"
+        DONE = "done", "Done"
+        CANCELLED = "cancelled", "Cancelled"
+
+    OPEN_STATUSES = OPEN_TASK_STATUSES
+    # Accepted as input and reported as legacy_status for one release.
+    LEGACY_TO_STATUS = {"planned": "todo", "completed": "done", "skipped": "cancelled"}
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
@@ -154,13 +186,13 @@ class Task(models.Model):
     title = models.CharField(max_length=200)
     description = models.TextField(blank=True, default="")
     area = models.ForeignKey(
-        Area, null=True, blank=True, on_delete=models.SET_NULL, related_name="tasks"
+        Area, null=True, blank=True, on_delete=models.RESTRICT, related_name="tasks"
     )
     roadmap_item = models.ForeignKey(
         "roadmaps.RoadmapNode",
         null=True,
         blank=True,
-        on_delete=models.SET_NULL,
+        on_delete=models.RESTRICT,
         related_name="tasks",
     )
     priority = models.PositiveSmallIntegerField(default=0)
@@ -168,10 +200,10 @@ class Task(models.Model):
     task_type = models.CharField(max_length=40, blank=True, default="")
     is_deep_work_default = models.BooleanField(default=False)
     status = models.CharField(
-        max_length=12, choices=Status.choices, default=Status.PLANNED
+        max_length=12, choices=Status.choices, default=Status.TODO
     )
     completed_at = models.DateTimeField(null=True, blank=True)
-    skipped_at = models.DateTimeField(null=True, blank=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
     archived_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -179,25 +211,25 @@ class Task(models.Model):
     class Meta:
         constraints = [
             models.CheckConstraint(
-                condition=models.Q(status__in=("planned", "completed", "skipped")),
+                condition=models.Q(status__in=TASK_STATUSES),
                 name="planning_task_status_valid",
             ),
             models.CheckConstraint(
                 condition=(
                     models.Q(
-                        status="planned",
+                        status__in=OPEN_TASK_STATUSES,
                         completed_at__isnull=True,
-                        skipped_at__isnull=True,
+                        cancelled_at__isnull=True,
                     )
                     | models.Q(
-                        status="completed",
+                        status="done",
                         completed_at__isnull=False,
-                        skipped_at__isnull=True,
+                        cancelled_at__isnull=True,
                     )
                     | models.Q(
-                        status="skipped",
+                        status="cancelled",
                         completed_at__isnull=True,
-                        skipped_at__isnull=False,
+                        cancelled_at__isnull=False,
                     )
                 ),
                 name="planning_task_terminal_fields_valid",
@@ -216,7 +248,7 @@ class DailyPlan(models.Model):
         Challenge,
         null=True,
         blank=True,
-        on_delete=models.SET_NULL,
+        on_delete=models.RESTRICT,
         related_name="daily_plans",
     )
     notes = models.TextField(blank=True, default="")
@@ -247,8 +279,8 @@ class DailyPlanItem(models.Model):
         on_delete=models.CASCADE,
         related_name="daily_plan_items",
     )
-    plan = models.ForeignKey(DailyPlan, on_delete=models.CASCADE, related_name="items")
-    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="plan_items")
+    plan = models.ForeignKey(DailyPlan, on_delete=models.RESTRICT, related_name="items")
+    task = models.ForeignKey(Task, on_delete=models.RESTRICT, related_name="plan_items")
     kind = models.CharField(max_length=12, choices=Kind.choices, default=Kind.SECONDARY)
     position = models.PositiveIntegerField(default=0)
     state = models.CharField(
@@ -282,6 +314,9 @@ class PlanningEvent(models.Model):
         COMPLETED = "completed", "Completed"
         SKIPPED = "skipped", "Skipped"
         REOPENED = "reopened", "Reopened"
+        STATUS_CHANGED = "status_changed", "Status changed"
+        ARCHIVED = "archived", "Archived"
+        RESTORED = "restored", "Restored"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
@@ -291,20 +326,20 @@ class PlanningEvent(models.Model):
     )
     event_type = models.CharField(max_length=20, choices=EventType.choices)
     task = models.ForeignKey(
-        Task, null=True, on_delete=models.SET_NULL, related_name="planning_events"
+        Task, null=True, on_delete=models.RESTRICT, related_name="planning_events"
     )
     source_item = models.ForeignKey(
         DailyPlanItem,
         null=True,
         blank=True,
-        on_delete=models.SET_NULL,
+        on_delete=models.RESTRICT,
         related_name="source_events",
     )
     destination_item = models.ForeignKey(
         DailyPlanItem,
         null=True,
         blank=True,
-        on_delete=models.SET_NULL,
+        on_delete=models.RESTRICT,
         related_name="destination_events",
     )
     snapshot = models.JSONField(default=dict)

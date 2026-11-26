@@ -1,11 +1,13 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
+from config.admin_safety import NoHardDeleteAdmin
+
 from .models import User
 
 
 @admin.register(User)
-class UserAdmin(DjangoUserAdmin):
+class UserAdmin(NoHardDeleteAdmin, DjangoUserAdmin):
     ordering = ("email",)
     list_display = ("email", "display_name", "is_staff", "is_active")
     fieldsets = (

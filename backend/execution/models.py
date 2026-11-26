@@ -25,18 +25,18 @@ class FocusSession(models.Model):
         Task,
         null=True,
         blank=True,
-        on_delete=models.SET_NULL,
+        on_delete=models.RESTRICT,
         related_name="focus_sessions",
     )
     roadmap_item = models.ForeignKey(
         RoadmapNode,
         null=True,
         blank=True,
-        on_delete=models.SET_NULL,
+        on_delete=models.RESTRICT,
         related_name="focus_sessions",
     )
     area = models.ForeignKey(
-        Area, on_delete=models.PROTECT, related_name="focus_sessions"
+        Area, on_delete=models.RESTRICT, related_name="focus_sessions"
     )
     title = models.CharField(max_length=200)
     status = models.CharField(
@@ -83,8 +83,18 @@ class FocusSession(models.Model):
         from django.utils import timezone
 
         at = at or self.ended_at or timezone.now()
+        # Only the part of each pause inside [started_at, at] counts, so a
+        # corrected (narrower) window never subtracts pauses outside it.
         paused = sum(
-            int(((pause.ended_at or at) - pause.started_at).total_seconds())
+            max(
+                0,
+                int(
+                    (
+                        min(pause.ended_at or at, at)
+                        - max(pause.started_at, self.started_at)
+                    ).total_seconds()
+                ),
+            )
             for pause in self.pauses.all()
         )
         return max(0, int((at - self.started_at).total_seconds()) - paused)
@@ -94,7 +104,7 @@ class SessionPause(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     session = models.ForeignKey(
-        FocusSession, on_delete=models.CASCADE, related_name="pauses"
+        FocusSession, on_delete=models.RESTRICT, related_name="pauses"
     )
     started_at = models.DateTimeField()
     ended_at = models.DateTimeField(null=True, blank=True)
@@ -113,7 +123,7 @@ class FocusSessionCorrection(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     session = models.ForeignKey(
-        FocusSession, on_delete=models.CASCADE, related_name="corrections"
+        FocusSession, on_delete=models.RESTRICT, related_name="corrections"
     )
     reason = models.TextField()
     before = models.JSONField()

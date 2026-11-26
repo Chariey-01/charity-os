@@ -20,11 +20,12 @@ class Accomplishment(models.Model):
     timezone_name = models.CharField(max_length=64)
     title = models.CharField(max_length=180)
     description = models.TextField(blank=True, default="")
-    area = models.ForeignKey(Area, null=True, blank=True, on_delete=models.SET_NULL)
-    task = models.ForeignKey(Task, null=True, blank=True, on_delete=models.SET_NULL)
+    area = models.ForeignKey(Area, null=True, blank=True, on_delete=models.RESTRICT)
+    task = models.ForeignKey(Task, null=True, blank=True, on_delete=models.RESTRICT)
     session = models.ForeignKey(
-        FocusSession, null=True, blank=True, on_delete=models.SET_NULL
+        FocusSession, null=True, blank=True, on_delete=models.RESTRICT
     )
+    archived_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
 
@@ -42,29 +43,30 @@ class Evidence(models.Model):
     text = models.TextField(blank=True, default="")
     url = models.URLField(blank=True, default="")
     task = models.ForeignKey(
-        Task, null=True, blank=True, on_delete=models.CASCADE, related_name="evidence"
+        Task, null=True, blank=True, on_delete=models.RESTRICT, related_name="evidence"
     )
     session = models.ForeignKey(
         FocusSession,
         null=True,
         blank=True,
-        on_delete=models.CASCADE,
+        on_delete=models.RESTRICT,
         related_name="evidence",
     )
     roadmap_node = models.ForeignKey(
         RoadmapNode,
         null=True,
         blank=True,
-        on_delete=models.CASCADE,
+        on_delete=models.RESTRICT,
         related_name="evidence",
     )
     accomplishment = models.ForeignKey(
         Accomplishment,
         null=True,
         blank=True,
-        on_delete=models.CASCADE,
+        on_delete=models.RESTRICT,
         related_name="evidence",
     )
+    archived_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
