@@ -1,5 +1,6 @@
 """API behaviour shared by daily reflections and weekly reviews (Phase 0C, S8)."""
 
+from django.db import IntegrityError
 from rest_framework import serializers
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -35,15 +36,25 @@ class ReflectionMixin:
 
     natural_key = None
 
+    def _existing(self, value):
+        if not value:
+            return None
+        return self.get_queryset().filter(**{self.natural_key: value}).first()
+
     def create(self, request, *args, **kwargs):
         value = request.data.get(self.natural_key)
-        existing = (
-            self.get_queryset().filter(**{self.natural_key: value}).first()
-            if value
-            else None
-        )
+        existing = self._existing(value)
         if existing is None:
-            return super().create(request, *args, **kwargs)
+            try:
+                return super().create(request, *args, **kwargs)
+            except (IntegrityError, serializers.ValidationError):
+                # Another request (often a retry of this one) stored the
+                # period after the lookup: its row fails our constraint check
+                # (400) or the insert (IntegrityError). Answer as if this
+                # request had arrived second. Any other error re-raises.
+                existing = self._existing(value)
+                if existing is None:
+                    raise
         fields = self.get_serializer().fields
         same = all(
             fields[name].to_internal_value(request.data[name])
