@@ -1,12 +1,67 @@
 /* CharityOS service worker.
+ *
  * Caches only the application shell so the app opens offline. API responses
- * are private and server-authoritative, so /api/ and /admin/ are never cached.
+ * are private and server-authoritative, so /api/, /admin/ and /static/ are
+ * never cached or intercepted.
+ *
+ * The last known-good shell is never replaced by something broken:
+ * - only successful (2xx, same-origin) responses are ever cached;
+ * - a new index.html replaces the cached one only after every /assets/ file it
+ *   references has been fetched successfully, so a half-finished deployment
+ *   or a proxy error page cannot become the offline app;
+ * - when a page load fails or returns an error, the cached shell is served;
+ * - assets the current shell no longer references are pruned.
  */
-const VERSION = "charityos-shell-v1";
-const SHELL = ["/", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/icon.svg"];
+const VERSION = "charityos-shell-v2";
+const ICONS = ["/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/icon.svg"];
+const ASSET = /(?:src|href)="(\/assets\/[^"?#]+)"/g;
+const PRIVATE = ["/api/", "/admin/", "/static/"];
+
+function pathOf(request) {
+  return new URL(typeof request === "string" ? request : request.url, self.location.origin).pathname;
+}
+
+function usable(response) {
+  return Boolean(response && response.ok && (response.type === "basic" || response.type === "default"));
+}
+
+/** Store ``html`` as the shell only if all of its assets load; returns true when it did. */
+async function adoptShell(html, headers) {
+  const assets = [...new Set([...html.matchAll(ASSET)].map((match) => match[1]))];
+  const fetched = await Promise.all(
+    assets.map((path) =>
+      fetch(path, { cache: "no-cache" })
+        .then((response) => (usable(response) ? response : null))
+        .catch(() => null),
+    ),
+  );
+  if (fetched.some((response) => response === null)) return false; // incomplete: keep the old shell
+  const cache = await caches.open(VERSION);
+  await Promise.all(assets.map((path, index) => cache.put(path, fetched[index])));
+  await cache.put("/", new Response(html, { status: 200, headers }));
+  const keep = new Set(assets);
+  for (const request of await cache.keys()) {
+    const path = pathOf(request);
+    if (path.startsWith("/assets/") && !keep.has(path)) await cache.delete(request);
+  }
+  return true;
+}
+
+async function refreshShell(response) {
+  if (!usable(response) || !(response.headers.get("Content-Type") || "").includes("text/html")) return false;
+  return adoptShell(await response.text(), response.headers);
+}
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(VERSION).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()));
+  event.waitUntil(
+    (async () => {
+      const cache = await caches.open(VERSION);
+      await cache.addAll(ICONS); // rejects on any error response: the old worker stays
+      const shell = await fetch("/", { cache: "no-cache" });
+      if (!(await refreshShell(shell))) throw new Error("The app shell is incomplete; not installing.");
+      await self.skipWaiting();
+    })(),
+  );
 });
 
 self.addEventListener("activate", (event) => {
@@ -18,40 +73,50 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+async function cachedShell() {
+  const cache = await caches.open(VERSION);
+  return cache.match("/");
+}
+
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   const url = new URL(request.url);
   if (request.method !== "GET" || url.origin !== self.location.origin) return;
-  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/admin/")) return;
+  if (PRIVATE.some((prefix) => url.pathname.startsWith(prefix))) return;
 
   if (request.mode === "navigate") {
-    // Network first so deployments show up immediately; cached shell offline.
+    // Network first so deployments show up immediately; the last good shell
+    // when offline or when the server answers with an error.
     event.respondWith(
-      fetch(request)
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(VERSION).then((cache) => cache.put("/", copy));
-          return response;
-        })
-        .catch(() => caches.match("/")),
+      (async () => {
+        try {
+          const response = await fetch(request);
+          if (usable(response)) {
+            event.waitUntil(refreshShell(response.clone()).catch(() => false));
+            return response;
+          }
+          return (await cachedShell()) || response;
+        } catch (error) {
+          const shell = await cachedShell();
+          if (shell) return shell;
+          throw error;
+        }
+      })(),
     );
     return;
   }
 
-  if (url.pathname.startsWith("/assets/") || url.pathname.startsWith("/icons/")) {
-    // Hashed build assets never change: cache first.
+  if (url.pathname.startsWith("/assets/") || url.pathname.startsWith("/icons/") || url.pathname === "/manifest.webmanifest") {
+    // Hashed build assets never change: cache first, and cache only successes.
     event.respondWith(
-      caches.match(request).then(
-        (cached) =>
-          cached ||
-          fetch(request).then((response) => {
-            if (response.ok) {
-              const copy = response.clone();
-              caches.open(VERSION).then((cache) => cache.put(request, copy));
-            }
-            return response;
-          }),
-      ),
+      (async () => {
+        const cache = await caches.open(VERSION);
+        const cached = await cache.match(request);
+        if (cached) return cached;
+        const response = await fetch(request);
+        if (usable(response)) event.waitUntil(cache.put(request, response.clone()));
+        return response;
+      })(),
     );
   }
 });
