@@ -135,3 +135,27 @@ def test_erasure_also_removes_the_accounts_login_attempt_records(people):
     assert "axes.AccessAttempt" in dry_run
     remaining = list(AccessAttempt.objects.values_list("username", flat=True))
     assert remaining == ["keep@example.com"]
+
+
+def test_erasure_also_removes_the_accounts_sign_in_sessions(people):
+    """Review of Phase 0C: the erased account's session rows were left behind."""
+    from django.contrib.sessions.models import Session
+    from django.test import Client
+
+    keep, gone, _ = people
+    for person in (keep, gone, gone):  # the erased user signed in on two devices
+        Client().force_login(person)
+
+    def owners():
+        return sorted(
+            session.get_decoded().get("_auth_user_id")
+            for session in Session.objects.all()
+        )
+
+    assert owners() == sorted([str(keep.pk), str(gone.pk), str(gone.pk)])
+
+    dry_run = erase("gone@example.com")
+    erase("gone@example.com", "--confirm", "gone@example.com")
+
+    assert "sessions.Session" in dry_run
+    assert owners() == [str(keep.pk)]

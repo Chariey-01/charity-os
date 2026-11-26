@@ -100,6 +100,25 @@ def login_records(email):
     return found
 
 
+def session_records(user):
+    """{label: queryset} of this account's sign-in sessions.
+
+    Sessions hold the user id inside their encoded data, not in a column, so
+    the deletion collector cannot see them either. Erasure is rare; reading
+    every session to find the account's is acceptable.
+    """
+    try:
+        model = apps.get_model("sessions.Session")
+    except LookupError:
+        return {}
+    owned = [
+        session.pk
+        for session in model.objects.iterator()
+        if session.get_decoded().get("_auth_user_id") == str(user.pk)
+    ]
+    return {model._meta.label: model.objects.filter(pk__in=owned)}
+
+
 def other_users_rows(user_id):
     """Row counts of every per-user table, excluding ``user_id``'s rows."""
     user_model = get_user_model()
@@ -139,7 +158,7 @@ class Command(BaseCommand):
         with transaction.atomic():
             user = user_model.objects.select_for_update().get(pk=user.pk)
             plan = erasure_plan(user)
-            records = login_records(user.email)
+            records = {**login_records(user.email), **session_records(user)}
             plan.update(
                 {
                     label: rows.count()
@@ -162,7 +181,9 @@ class Command(BaseCommand):
             _, deleted = user.delete()
             for rows in records.values():
                 for label, count in rows.delete()[1].items():
-                    if label in LOGIN_RECORD_MODELS:  # expirations cascade with them
+                    # Lockout expirations cascade with attempts; count only
+                    # the planned tables.
+                    if label in records:
                         deleted[label] = deleted.get(label, 0) + count
             deleted = {
                 label: count for label, count in sorted(deleted.items()) if count
