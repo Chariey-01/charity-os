@@ -9,7 +9,7 @@ import { EntrySheet } from "../features/schedule/EntrySheet";
 import { QuickAddSheet } from "../features/schedule/QuickAddSheet";
 import { ScheduleScreen } from "../features/schedule/ScheduleScreen";
 import { TodayScreen } from "../features/today/TodayScreen";
-import { ApiError, api, post } from "../lib/api";
+import { ApiError, api, onSessionEnded, post } from "../lib/api";
 import { useOnline } from "../lib/pwa";
 import { useReminders } from "../lib/reminders";
 import { addDays, todayIn } from "../lib/time";
@@ -45,7 +45,7 @@ const NAV = [
 
 type Toast = { id: number; message: string; kind: ToastKind };
 
-function Login({ onLogin }: { onLogin: (user: User) => void }) {
+function Login({ onLogin, notice }: { onLogin: (user: User) => void; notice?: string }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -69,6 +69,7 @@ function Login({ onLogin }: { onLogin: (user: User) => void }) {
         <p className="eyebrow">CharityOS</p>
         <h1>Plan the day. Live it. See what happened.</h1>
         <p className="muted">Your permanent personal scheduler for work, learning, health and life.</p>
+        {notice && <p className="notice" role="status">{notice}</p>}
         <form onSubmit={submit} className="form">
           <label className="field">
             <span>Email</span>
@@ -89,6 +90,21 @@ function Login({ onLogin }: { onLogin: (user: User) => void }) {
 export function App() {
   const [user, setUser] = useState<User | null | undefined>(undefined);
   const [bootError, setBootError] = useState("");
+  const [notice, setNotice] = useState("");
+  const signedIn = useRef(false);
+  signedIn.current = Boolean(user);
+
+  // The server ended the session (expiry, sign-out elsewhere, erasure): drop
+  // everything the signed-in shell held and ask for sign-in again. CSRF and
+  // permission errors never come here (lib/api.ts).
+  useEffect(() => {
+    onSessionEnded(() => {
+      if (!signedIn.current) return;
+      setUser(null);
+      setNotice("Your session has ended. Sign in again to carry on where you left off.");
+    });
+    return () => onSessionEnded(null);
+  }, []);
 
   const boot = useCallback(async () => {
     setBootError("");
@@ -114,7 +130,17 @@ export function App() {
     );
   }
   if (user === undefined) return <main className="loading" role="status">Loading CharityOS…</main>;
-  if (!user) return <Login onLogin={setUser} />;
+  if (!user) {
+    return (
+      <Login
+        notice={notice}
+        onLogin={(value) => {
+          setNotice("");
+          setUser(value);
+        }}
+      />
+    );
+  }
   return <Shell user={user} setUser={setUser} />;
 }
 

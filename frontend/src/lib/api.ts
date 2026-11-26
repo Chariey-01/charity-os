@@ -36,8 +36,19 @@ function firstMessage(payload: unknown): string | null {
   return null;
 }
 
+let sessionEnded: (() => void) | null = null;
+
+/**
+ * Called when the server says the request is not signed in
+ * (``error.code === "not_authenticated"``): the session expired, was signed
+ * out elsewhere or was erased. CSRF and permission failures never call it.
+ */
+export function onSessionEnded(handler: (() => void) | null) {
+  sessionEnded = handler;
+}
+
 /** Same-origin JSON client with session cookies and CSRF. */
-export async function api<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {
+export async function api<T>(path: string, init?: RequestInit & { json?: unknown }, retried = false): Promise<T> {
   const { json, ...rest } = init ?? {};
   let response: Response;
   try {
@@ -57,6 +68,13 @@ export async function api<T>(path: string, init?: RequestInit & { json?: unknown
   if (!response.ok) {
     const payload = await response.json().catch(() => null);
     const error = payload?.error ?? {};
+    // A rejected CSRF token is refused before the view runs, so nothing was
+    // saved: fetch a fresh token and send the same request once more.
+    if (error.code === "csrf_failed" && !retried && path !== "/auth/csrf") {
+      await api("/auth/csrf").catch(() => undefined);
+      return api<T>(path, init, true);
+    }
+    if (error.code === "not_authenticated" && !path.startsWith("/auth/")) sessionEnded?.();
     throw new ApiError(
       firstMessage(payload) ?? `Request failed (${response.status})`,
       response.status,
