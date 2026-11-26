@@ -38,5 +38,6 @@ urlpatterns = [
     path("insights", schedule_views.insights),
     path("preferences", schedule_views.preferences),
     path("areas/ensure-defaults", schedule_views.ensure_categories),
+    path("areas/ensure-workstreams", schedule_views.ensure_workstreams_view),
     path("progress", views.progress_view),
 ] + router.urls

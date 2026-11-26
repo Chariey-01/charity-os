@@ -7,7 +7,7 @@ from django.db import transaction
 from django.utils.text import slugify
 
 from challenges.models import Challenge
-from planning.categories import ensure_default_categories
+from planning.categories import ensure_default_categories, ensure_workstreams
 from planning.models import Area
 
 DEFAULT_AREAS = (
@@ -37,6 +37,11 @@ class Command(BaseCommand):
         parser.add_argument(
             "--password-env", help="Read the password from this environment variable"
         )
+        parser.add_argument(
+            "--with-workstreams",
+            action="store_true",
+            help="Also add the six suggested workstreams (planning.categories).",
+        )
 
     @transaction.atomic
     def handle(self, *args, **options):
@@ -64,6 +69,8 @@ class Command(BaseCommand):
             )
         # Adds scheduler categories (Social, Learning, Sleep, Custom) and colours.
         ensure_default_categories(user)
+        if options["with_workstreams"]:
+            ensure_workstreams(user)
         today = date.today()
         Challenge.objects.create(
             user=user,

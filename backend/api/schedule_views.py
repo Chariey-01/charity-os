@@ -13,7 +13,11 @@ from rest_framework.fields import DateTimeField
 from rest_framework.response import Response
 
 from execution.models import FocusSession
-from planning.categories import active_categories, ensure_default_categories
+from planning.categories import (
+    active_categories,
+    ensure_default_categories,
+    ensure_workstreams,
+)
 from planning.models import Area, DailyCapacity, DailyPlanItem, Task
 from roadmaps.models import RoadmapNode
 from scheduling import insights as insight_service
@@ -575,6 +579,29 @@ def preferences(request):
 @api_view(["POST"])
 def ensure_categories(request):
     created = ensure_default_categories(request.user)
+    rows = active_categories(request.user)
+    return Response(
+        {
+            "created": len(created),
+            "areas": [
+                {
+                    "id": str(area.id),
+                    "name": area.name,
+                    "slug": area.slug,
+                    "color": area.color,
+                    "health_kind": area.health_kind,
+                    "sort_order": area.sort_order,
+                    "archived_at": area.archived_at,
+                }
+                for area in rows
+            ],
+        }
+    )
+
+
+@api_view(["POST"])
+def ensure_workstreams_view(request):
+    created = ensure_workstreams(request.user)
     rows = active_categories(request.user)
     return Response(
         {
