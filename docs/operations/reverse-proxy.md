@@ -51,6 +51,8 @@ The value is checked at start-up, and the application refuses to start when:
 - an entry has host bits set (`10.0.0.1/8`);
 - an entry trusts everything (`0.0.0.0/0`, `::/0`).
 
+**List each proxy exactly as Django sees it in `REMOTE_ADDR`.** If the application server listens on an IPv6 socket, an IPv4 proxy can arrive as `::ffff:10.0.0.2`, which does not match `10.0.0.2`; list `::ffff:10.0.0.2/128` or bind the server to IPv4. A proxy that does not match is not trusted: the result is safe (shared lockouts, no spoofing), and the check below shows it.
+
 **List only addresses that are your proxies.** Anything listed can tell CharityOS which address a request came from. Never list a range that other customers of a hosting platform, or the public internet, can connect from.
 
 ### The proxy itself
