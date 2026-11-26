@@ -8,12 +8,14 @@ import { RoadmapsScreen } from "../features/roadmaps/RoadmapsScreen";
 import { EntrySheet } from "../features/schedule/EntrySheet";
 import { QuickAddSheet } from "../features/schedule/QuickAddSheet";
 import { ScheduleScreen } from "../features/schedule/ScheduleScreen";
+import { TaskSheet, TaskSheetMode } from "../features/tasks/TaskSheet";
+import { TasksScreen } from "../features/tasks/TasksScreen";
 import { TodayScreen } from "../features/today/TodayScreen";
 import { ApiError, api, onSessionEnded, post } from "../lib/api";
 import { useOnline } from "../lib/pwa";
 import { useReminders } from "../lib/reminders";
 import { addDays, todayIn } from "../lib/time";
-import type { Area, Entry, Preferences, QuickAddDefaults, Session, User } from "../lib/types";
+import type { Area, Entry, Preferences, QuickAddDefaults, Session, Task, User } from "../lib/types";
 import { AppContext, AppContextValue, EntrySheetMode, ToastKind } from "./context";
 import { navigate, tabOf, useHashRoute } from "./router";
 
@@ -37,6 +39,7 @@ const DEFAULT_PREFS: Preferences = {
 
 const NAV = [
   { tab: "today", label: "Today", icon: "today" },
+  { tab: "tasks", label: "Tasks", icon: "tasks" },
   { tab: "schedule", label: "Schedule", icon: "schedule" },
   { tab: "roadmaps", label: "Roadmaps", icon: "roadmaps" },
   { tab: "insights", label: "Insights", icon: "insights" },
@@ -155,6 +158,7 @@ function Shell({ user, setUser }: { user: User; setUser: (user: User | null) => 
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [quickAdd, setQuickAdd] = useState<QuickAddDefaults | null>(null);
   const [entrySheet, setEntrySheet] = useState<{ id: string; mode: EntrySheetMode; key: number } | null>(null);
+  const [taskSheet, setTaskSheet] = useState<{ id: string | null; defaults?: Partial<Task>; mode: TaskSheetMode; key: number } | null>(null);
   const [celebration, setCelebration] = useState<{ title: string; detail?: string; key: number } | null>(null);
   const [reminderEntries, setReminderEntries] = useState<Entry[]>([]);
   const [today, setToday] = useState(() => todayIn(user.timezone));
@@ -245,6 +249,7 @@ function Shell({ user, setUser }: { user: User; setUser: (user: User | null) => 
       openQuickAdd: (defaults = {}) => setQuickAdd(defaults),
       openEntry: (entry, mode = "view") =>
         setEntrySheet({ id: typeof entry === "string" ? entry : entry.id, mode, key: Date.now() }),
+      openTask: (task, defaults) => setTaskSheet({ id: task, defaults, mode: task ? "view" : "edit", key: Date.now() }),
       navigate,
       logout: async () => {
         await post("/auth/logout").catch(() => undefined);
@@ -255,12 +260,14 @@ function Shell({ user, setUser }: { user: User; setUser: (user: User | null) => 
   );
 
   const screen =
-    tab === "schedule" ? (
+    tab === "tasks" ? (
+      <TasksScreen route={route} />
+    ) : tab === "schedule" ? (
       <ScheduleScreen route={route} />
     ) : tab === "roadmaps" ? (
       <RoadmapsScreen />
     ) : tab === "insights" ? (
-      <InsightsScreen />
+      <InsightsScreen route={route} />
     ) : tab === "profile" ? (
       <ProfileScreen route={route} />
     ) : (
@@ -283,8 +290,12 @@ function Shell({ user, setUser }: { user: User; setUser: (user: User | null) => 
         <button
           type="button"
           className="fab"
-          onClick={() => setQuickAdd({ date: tab === "schedule" ? route.params.get("date") ?? today : today })}
-          aria-label="Quick add activity"
+          onClick={() =>
+            tab === "tasks"
+              ? setTaskSheet({ id: null, mode: "edit", key: Date.now() })
+              : setQuickAdd({ date: tab === "schedule" ? route.params.get("date") ?? today : today })
+          }
+          aria-label={tab === "tasks" ? "Add a task" : "Quick add activity"}
         >
           <Icon name="plus" size={26} />
         </button>
@@ -314,6 +325,15 @@ function Shell({ user, setUser }: { user: User; setUser: (user: User | null) => 
           </div>
         )}
         {quickAdd && <QuickAddSheet defaults={quickAdd} onClose={() => setQuickAdd(null)} />}
+        {taskSheet && (
+          <TaskSheet
+            key={taskSheet.key}
+            taskId={taskSheet.id}
+            defaults={taskSheet.defaults}
+            initialMode={taskSheet.mode}
+            onClose={() => setTaskSheet(null)}
+          />
+        )}
         {entrySheet && (
           <EntrySheet key={entrySheet.key} entryId={entrySheet.id} initialMode={entrySheet.mode} onClose={() => setEntrySheet(null)} />
         )}

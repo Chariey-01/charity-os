@@ -32,7 +32,7 @@ function insights(label = "7d"): Insights {
 }
 
 test("insights show totals, charts, categories and a separate health section", async () => {
-  window.location.hash = "#/insights";
+  window.location.hash = "#/insights?view=trends";
   mockApi({ "/insights": insights() });
   render(<App />);
   const totals = await screen.findByRole("region", { name: "Totals" });
@@ -49,7 +49,7 @@ test("insights show totals, charts, categories and a separate health section", a
 });
 
 test("charts expose a keyboard tooltip and a table view", async () => {
-  window.location.hash = "#/insights";
+  window.location.hash = "#/insights?view=trends";
   mockApi({ "/insights": insights() });
   render(<App />);
   const plot = await screen.findByRole("img", { name: /Focus minutes per day/ });
@@ -62,7 +62,7 @@ test("charts expose a keyboard tooltip and a table view", async () => {
 });
 
 test("changing the range refetches with the selected period", async () => {
-  window.location.hash = "#/insights";
+  window.location.hash = "#/insights?view=trends";
   const api = mockApi({ "/insights": (call: { search: string }) => insights(new URLSearchParams(call.search).get("period") ?? "30d") });
   render(<App />);
   await screen.findByRole("region", { name: "Totals" });
@@ -74,7 +74,7 @@ test("changing the range refetches with the selected period", async () => {
 });
 
 test("badges are collapsed and milestones are listed", async () => {
-  window.location.hash = "#/insights";
+  window.location.hash = "#/insights?view=trends";
   mockApi({ "/insights": insights() });
   render(<App />);
   const week = await screen.findByRole("region", { name: "This week" });

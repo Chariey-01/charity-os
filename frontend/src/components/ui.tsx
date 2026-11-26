@@ -8,6 +8,7 @@ const ICONS: Record<string, ReactNode> = {
   roadmaps: <><path d="M4 19c4 0 4-6 8-6s4-6 8-6" /><circle cx="4" cy="19" r="2" /><circle cx="20" cy="7" r="2" /></>,
   insights: <><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" /></>,
   profile: <><circle cx="12" cy="8" r="4" /><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" /></>,
+  tasks: <><rect x="3.5" y="3.5" width="17" height="17" rx="4" /><path d="M7.5 12l3 3 6-6.5" /></>,
   plus: <path d="M12 5v14M5 12h14" />,
   close: <path d="M6 6l12 12M18 6L6 18" />,
   play: <path d="M8 5.5v13l10-6.5z" />,

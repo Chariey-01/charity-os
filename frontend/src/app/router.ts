@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 export type Route = { path: string[]; params: URLSearchParams };
 
-export const TABS = ["today", "schedule", "roadmaps", "insights", "profile"] as const;
+export const TABS = ["today", "tasks", "schedule", "roadmaps", "insights", "profile"] as const;
 export type Tab = (typeof TABS)[number];
 
 export function parseHash(hash: string): Route {

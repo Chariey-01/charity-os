@@ -92,6 +92,7 @@ function SessionFinishSheet({ session, seconds, onClose }: { session: Session; s
   const [outcome, setOutcome] = useState("");
   const [learning, setLearning] = useState("");
   const [evidence, setEvidence] = useState("");
+  const [completeTask, setCompleteTask] = useState(false);
   // One finish action, one key: a resend of this evidence cannot store it twice.
   const [evidenceKey] = useState(newId);
   const [busy, setBusy] = useState(false);
@@ -113,6 +114,7 @@ function SessionFinishSheet({ session, seconds, onClose }: { session: Session; s
           session: session.id,
         }, { idempotencyKey: evidenceKey });
       }
+      if (completeTask && session.task) await post(`/tasks/${session.task}/complete`);
       app.celebrate(session.title, `${Math.round(seconds / 60)} min of focus`);
       app.refresh();
       onClose();
@@ -141,6 +143,12 @@ function SessionFinishSheet({ session, seconds, onClose }: { session: Session; s
           <span>Evidence note or HTTPS/GitHub URL</span>
           <input value={evidence} onChange={(event) => setEvidence(event.target.value)} placeholder="A note or https://…" />
         </label>
+        {session.task && (
+          <label className="check-field">
+            <input type="checkbox" checked={completeTask} onChange={(event) => setCompleteTask(event.target.checked)} />
+            <span>The task is done: mark it complete</span>
+          </label>
+        )}
         {error && <p className="form-error" role="alert">{error}</p>}
         <div className="button-row">
           <button type="button" className="button secondary" onClick={onClose}>Keep going</button>

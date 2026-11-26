@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
 
 import { useApp } from "../../app/context";
-import { ErrorState, Icon, Loading } from "../../components/ui";
+import type { Route } from "../../app/router";
+import { ErrorState, Icon, Loading, Segmented } from "../../components/ui";
 import { api } from "../../lib/api";
 import { formatDate } from "../../lib/time";
 import type { Insights } from "../../lib/types";
 import { formatMinutes } from "../../lib/format";
 import { CategoryBars, ColumnChart, Point } from "./Chart";
+import { WeeklyProgress } from "./WeeklyProgress";
+import { WeeklyReview } from "./WeeklyReview";
 
 const PERIODS = [
   { value: "7d", label: "7 days" },
@@ -23,7 +26,54 @@ const short = (date: string) => formatDate(date, { day: "numeric", month: "short
 /** Compact axis tick: the day number, or the month name on the 1st. Full dates live in the tooltip and table. */
 const tick = (date: string) => (date.endsWith("-01") ? formatDate(date, { month: "short" }) : String(Number(date.slice(8))));
 
-export function InsightsScreen() {
+type View = "week" | "trends";
+
+/**
+ * Insights has two views: this week's task progress (the default, with the
+ * weekly review under #/insights/review) and the longer-range trends.
+ */
+export function InsightsScreen({ route }: { route: Route }) {
+  const app = useApp();
+  const week = route.params.get("week");
+  if (route.path[1] === "review") {
+    return (
+      <section className="screen insights" aria-labelledby="review-title">
+        <header className="screen-head">
+          <p className="eyebrow">Insights</p>
+          <h1 id="review-title">Weekly review</h1>
+          <p className="muted">What was planned, what happened, what comes next.</p>
+        </header>
+        <WeeklyReview week={week} onWeek={(date) => app.navigate(`#/insights/review?week=${date}`)} />
+      </section>
+    );
+  }
+  const view: View = route.params.get("view") === "trends" ? "trends" : "week";
+  return (
+    <section className="screen insights" aria-labelledby="insights-title">
+      <header className="screen-head">
+        <p className="eyebrow">Insights</p>
+        <h1 id="insights-title">What actually happened</h1>
+        <p className="muted">From your real records. No composite score.</p>
+      </header>
+      <Segmented<View>
+        label="Insights view"
+        value={view}
+        onChange={(next) => app.navigate(next === "trends" ? "#/insights?view=trends" : "#/insights")}
+        options={[
+          { value: "week", label: "This week" },
+          { value: "trends", label: "Trends" },
+        ]}
+      />
+      {view === "week" ? (
+        <WeeklyProgress week={week} onWeek={(date) => app.navigate(`#/insights?week=${date}`)} />
+      ) : (
+        <Trends />
+      )}
+    </section>
+  );
+}
+
+function Trends() {
   const app = useApp();
   const [period, setPeriod] = useState("30d");
   const [data, setData] = useState<Insights | null>(null);
@@ -53,12 +103,7 @@ export function InsightsScreen() {
   }, [period, app.dataVersion, retry]);
 
   return (
-    <section className="screen insights" aria-labelledby="insights-title">
-      <header className="screen-head">
-        <p className="eyebrow">Insights</p>
-        <h1 id="insights-title">What actually happened</h1>
-        <p className="muted">From your real records. No composite score.</p>
-      </header>
+    <>
       {data && <WeekCard data={data} />}
       <div className="chip-scroll filter-row" role="radiogroup" aria-label="Time range">
         {PERIODS.map((option) => (
@@ -77,7 +122,7 @@ export function InsightsScreen() {
       {error && !data && <ErrorState message={error} onRetry={() => setRetry((value) => value + 1)} />}
       {!data && !error && <Loading label="Loading insights" />}
       {data && <InsightsBody data={data} roadmaps={roadmaps} refetching={loading} />}
-    </section>
+    </>
   );
 }
 

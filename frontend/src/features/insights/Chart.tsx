@@ -1,5 +1,6 @@
 import { KeyboardEvent, useId, useState } from "react";
 
+import { Slice, foldSlices } from "../../lib/charts";
 import { formatMinutes, niceTicks } from "../../lib/format";
 
 export type Point = { label: string; value: number; track?: number; detail?: string; tick?: string };
@@ -153,5 +154,136 @@ export function CategoryBars({ rows }: { rows: { key: string; label: string; col
         </li>
       ))}
     </ul>
+  );
+}
+
+/**
+ * Donut for one whole split into a few parts, always beside the ranked
+ * figures (name, amount, share) so nothing depends on colour or on judging
+ * angles. Tap, hover or arrow keys read a segment; a table view is available.
+ */
+export function DonutChart({
+  title,
+  rows,
+  unit,
+  format = (value) => `${value}`,
+  empty,
+}: {
+  title: string;
+  rows: Slice[];
+  unit: string;
+  format?: (value: number) => string;
+  empty: string;
+}) {
+  const [active, setActive] = useState<number | null>(null);
+  const [table, setTable] = useState(false);
+  const titleId = useId();
+  const slices = foldSlices(rows);
+  const total = slices.reduce((sum, slice) => sum + slice.value, 0);
+  const share = (value: number) => (total ? Math.round((value * 100) / total) : 0);
+  const radius = 54;
+  const circumference = 2 * Math.PI * radius;
+  const gap = slices.length > 1 ? 2 : 0;
+  let offset = 0;
+
+  function onKey(event: KeyboardEvent<HTMLDivElement>) {
+    if (!slices.length) return;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") setActive((value) => ((value ?? -1) + 1) % slices.length);
+    else if (event.key === "ArrowLeft" || event.key === "ArrowUp") setActive((value) => ((value ?? slices.length) - 1 + slices.length) % slices.length);
+    else if (event.key === "Escape") setActive(null);
+    else return;
+    event.preventDefault();
+  }
+
+  const current = active !== null ? slices[active] : null;
+  return (
+    <figure className="chart donut-chart" aria-labelledby={titleId}>
+      <figcaption className="chart-head">
+        <span id={titleId} className="chart-title">{title}</span>
+        {total > 0 && (
+          <button type="button" className="text-button small" onClick={() => setTable(!table)} aria-pressed={table}>
+            {table ? "Chart" : "Table"}
+          </button>
+        )}
+      </figcaption>
+      {total === 0 ? (
+        <p className="hint">{empty}</p>
+      ) : table ? (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Workstream</th>
+                <th scope="col">{unit}</th>
+                <th scope="col">Share</th>
+              </tr>
+            </thead>
+            <tbody>
+              {slices.map((slice) => (
+                <tr key={slice.key}>
+                  <th scope="row">{slice.label}</th>
+                  <td>{format(slice.value)}</td>
+                  <td>{share(slice.value)}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="donut-layout">
+          <div
+            className="donut-plot"
+            tabIndex={0}
+            role="img"
+            aria-label={`${title}. ${slices.map((slice) => `${slice.label} ${format(slice.value)} ${unit}, ${share(slice.value)}%`).join("; ")}. Use arrow keys to read each part.`}
+            onKeyDown={onKey}
+            onMouseLeave={() => setActive(null)}
+            onBlur={() => setActive(null)}
+          >
+            <svg viewBox="0 0 140 140" width="140" height="140" aria-hidden="true">
+              <circle cx="70" cy="70" r={radius} className="donut-track" />
+              {slices.map((slice, index) => {
+                const length = (slice.value / total) * circumference;
+                const dash = Math.max(length - gap, 0.5);
+                const element = (
+                  <circle
+                    key={slice.key}
+                    cx="70"
+                    cy="70"
+                    r={radius}
+                    className={`donut-segment ${active === index ? "active" : ""} ${active !== null && active !== index ? "dim" : ""}`}
+                    stroke={slice.color}
+                    strokeDasharray={`${dash} ${circumference - dash}`}
+                    strokeDashoffset={-offset}
+                    transform="rotate(-90 70 70)"
+                    onPointerEnter={() => setActive(index)}
+                    onPointerDown={() => setActive(index)}
+                  />
+                );
+                offset += length;
+                return element;
+              })}
+              <text x="70" y="68" textAnchor="middle" className="donut-total">{current ? format(current.value) : format(total)}</text>
+              <text x="70" y="86" textAnchor="middle" className="donut-unit">{current ? `${share(current.value)}%` : unit}</text>
+            </svg>
+          </div>
+          <ol className="donut-legend">
+            {slices.map((slice, index) => (
+              <li key={slice.key} className={active === index ? "active" : ""} onPointerEnter={() => setActive(index)} onPointerDown={() => setActive(index)}>
+                <span className="category-dot" style={{ background: slice.color }} aria-hidden="true" />
+                <span className="legend-label">{slice.label}</span>
+                <b>{format(slice.value)}</b>
+                <small>{share(slice.value)}%</small>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+      {current && !table && (
+        <p className="sr-only" role="status">
+          {current.label}: {format(current.value)} {unit}, {share(current.value)}%
+        </p>
+      )}
+    </figure>
   );
 }

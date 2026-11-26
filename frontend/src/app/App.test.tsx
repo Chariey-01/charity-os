@@ -34,12 +34,12 @@ test("shows an offline state instead of the login form when the server is unreac
   expect(screen.queryByRole("button", { name: "Sign in" })).not.toBeInTheDocument();
 });
 
-test("mobile navigation exposes the five primary sections", async () => {
+test("mobile navigation exposes the six primary sections", async () => {
   mockApi({ "/schedule/day": day([entry()]) });
   render(<App />);
   const nav = await screen.findByRole("navigation", { name: "Primary" });
   const links = within(nav).getAllByRole("link");
-  expect(links.map((link) => link.textContent)).toEqual(["Today", "Schedule", "Roadmaps", "Insights", "Profile"]);
+  expect(links.map((link) => link.textContent)).toEqual(["Today", "Tasks", "Schedule", "Roadmaps", "Insights", "Profile"]);
   expect(within(nav).getByRole("link", { name: "Today" })).toHaveAttribute("aria-current", "page");
 
   fireEvent.click(within(nav).getByRole("link", { name: "Schedule" }));

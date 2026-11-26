@@ -96,3 +96,12 @@ test("a due reminder is shown in the app when system notifications are unavailab
   const status = await screen.findByText(/Grocery shopping in 10 min/);
   expect(within(status.closest(".toasts")!).getByText(/Personal/)).toBeInTheDocument();
 });
+
+test("categories: the six suggested workstreams are offered until they exist", async () => {
+  const api = mockApi({ "POST /areas/ensure-workstreams": { created: 6, areas: [] } });
+  window.location.hash = "#/profile/categories";
+  render(<App />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "Add the six workstreams" }));
+  await waitFor(() => expect(api.writes().map((call) => call.path)).toEqual(["/areas/ensure-workstreams"]));
+});
