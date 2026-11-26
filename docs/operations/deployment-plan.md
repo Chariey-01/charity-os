@@ -1,0 +1,115 @@
+# Deployment plan (private use)
+
+**Status (26 Nov 2026): planned, not done.** Nothing has been deployed. No hosting has been bought, no domain registered, and no account created. The owner must approve, separately:
+- the hosting choice and its cost;
+- the domain;
+- the deployment itself;
+- any migration of the personal `charityos` database.
+
+This plan lists what the code on `integration/phase-0` needs. Related guides:
+- [reverse proxy](reverse-proxy.md)
+- [backup and restore](backup-and-restore.md)
+- [migrations](../migrations.md)
+- [PWA checklist](private-pwa-release-checklist.md)
+
+## 1. Shape of the deployment
+
+There is one HTTPS origin, for example `https://app.example.org`. Both the PWA and the session-cookie sign-in depend on it.
+
+| Path | Served by |
+|---|---|
+| `/` (including `index.html`, `sw.js`, `manifest.webmanifest`, `/assets/`, `/icons/`) | the files from `frontend/dist` (`npm ci && npm run build`) |
+| `/static/` | `backend/staticfiles` (`manage.py collectstatic --noinput`), for the admin |
+| `/api/`, `/admin/` | Django through gunicorn: `gunicorn config.wsgi` from `backend/` |
+
+**Django does not serve the frontend.** There is no WhiteNoise and no catch-all route. The proxy or web server in front must serve `frontend/dist` and `/static/` itself. This works with no code change on a small VPS with Caddy or nginx.
+
+A platform with a single process and no web server of your own, such as one PaaS web service, needs a code change first: WhiteNoise plus a route that serves `index.html`. That change needs its own review and tests. It is not part of this release.
+
+## 2. Hosting requirements
+
+| Need | Requirement |
+|---|---|
+| Runtime | Python 3.12. Node 24 at build time only. |
+| Database | Managed or self-run PostgreSQL **16**, on persistent storage, reachable only from the application. With 17 or later, the backup host needs client tools of that version or newer, and CI should move to the same version. |
+| TLS | A certificate for the chosen name, renewed automatically. |
+| Process | One gunicorn service, restarted on failure. Its logs go to stdout and stderr. |
+| Backups | Somewhere off the application host to hold encrypted backups (see section 7). |
+| Shell access | Needed to run `ops/db/*.sh` and the management commands (`erase_user`, `axes_reset_username`, `check_data_integrity`). |
+
+## 3. Environment variables and secrets
+
+Set these in the platform's secret store, never in the repository. `.env.example` lists the names.
+
+| Variable | Value |
+|---|---|
+| `DJANGO_SETTINGS_MODULE` | `config.settings.production` |
+| `DJANGO_SECRET_KEY` | A new random value of 50 or more characters, used only here. Production refuses to start without it. |
+| `DJANGO_ALLOWED_HOSTS` | The host name only, for example `app.example.org` |
+| `DJANGO_CSRF_TRUSTED_ORIGINS` | `https://app.example.org` |
+| `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT` | **All five, explicitly.** Settings read only these. A platform's `DATABASE_URL` is ignored by Django, and the `ops/db` scripts refuse to run while it is set. The defaults (`charityos` on `localhost`) are for development only. |
+| `CHARITYOS_TRUSTED_PROXIES` | Empty until the proxy's address is known, then exactly that address (see [reverse-proxy.md](reverse-proxy.md)) |
+
+The database password and secret key are owned by the operator. Use a database role that owns only the CharityOS database.
+
+## 4. HTTPS
+
+Production settings already redirect to HTTPS, set secure cookies, and send HSTS for one year with `includeSubDomains` and `preload`.
+- Use a domain or subdomain that serves nothing else.
+- Do not submit it for preloading while the setup may still change.
+- `SECURE_PROXY_SSL_HEADER` trusts `X-Forwarded-Proto`. That is safe only when the proxy overwrites the header and the application port cannot be reached directly.
+
+## 5. Reverse proxy and client addresses
+
+Follow [reverse-proxy.md](reverse-proxy.md). **Deployment stays blocked until its "Checking a deployment" test passes on the real host**: the security log must show the client's own network, not the proxy and not a forged address. No nginx or Caddy configuration has been run against this code yet. The configuration in that guide comes from documentation and must be verified there.
+
+## 6. Logging and monitoring
+
+- **Security events.** Logger `charityos.security` writes one line each to stderr: `login_succeeded`, `login_failed`, `login_locked_out`, `logout`, `csrf_rejected`, `erasure_dry_run`, `user_erased`. Emails are masked and IP addresses truncated. Keep these logs for at least 30 days.
+- **Alerts:**
+  - any `login_locked_out` you did not cause;
+  - repeated `csrf_rejected`;
+  - HTTP 5xx responses;
+  - the process restarting.
+- **Uptime.** Check `GET /api/v1/auth/csrf` every few minutes (it is anonymous and answers 200).
+- **Django errors: required fix before deployment (L1).** With production settings (`DEBUG = False`), an unhandled exception's traceback is written **nowhere**. Django's console handler only works in debug mode, and its admin-email handler has no `ADMINS` to send to. Verified on 26 Nov by loading the production settings: the `django` logger has only those two handlers, and `django.request` has none of its own. Before deploying, add a `django.request` handler at `ERROR` to stderr in `LOGGING`, with a test, and collect stderr.
+
+## 7. Backups and retention
+
+- Use `ops/db/backup.sh` from a host that can reach the database. It keeps 14 daily and 8 weekly backups, each with a checksum and row-count manifest, and verifies every backup.
+- Copies kept off the machine must be **encrypted**. The current encrypted copy sits on the development machine's own disk, so an off-machine location is still an owner decision.
+- If the platform has its own database backups, keep them on as well, but they do not replace a restore drill.
+- The systemd timer in `backup-and-restore.md` is installed only after a manual backup and restore have passed on the real host, and only with owner approval.
+
+## 8. Restore testing
+
+1. **Before any real data goes in:** take a backup of the new production database, then run `ops/db/restore-drill.sh` into a **new** database. It refuses existing ones and protected names.
+2. Repeat monthly, and before every release that contains migrations.
+3. Keep the drill reports.
+
+## 9. Running migrations
+
+- Never run `manage.py migrate` directly against a database that holds real records. Run `ops/db/migrate-with-backup.sh --database NAME` instead. It takes a verified pre-migration backup, checks that Django will reach that same database, and only then migrates.
+- **A new, empty production database** migrates from zero. CI and the local fresh-database check do exactly that on every change.
+- **The personal `charityos` database** (34 migrations, applied on 24 Nov) moves 25 migrations forward to this release. The restore drill exercises that path on `charityos_acceptance`, which has the same 34: forward, back with every row identical, then forward again. Migrating `charityos` needs separate owner approval and a drill of `charityos` itself first.
+
+## 10. Rollback
+
+| Situation | Action |
+|---|---|
+| A code problem, schema unchanged | Redeploy the previous commit. |
+| A release whose migrations must be undone | Stop the app, then reverse with `manage.py migrate <app> <previous>` in the order given in [migrations.md](../migrations.md), then redeploy the previous code. Every Phase 0 migration has a reverse, but some refuse to run when reversing would lose data: the four `*.0002_archived_at` migrations while archived rows exist, and `reflections.0003` while revisions exist. In those cases use the backup row below. `api.0001` drops only replay records, which expire after 24 hours anyway. |
+| Data damaged, or a migration half-applied | Restore the pre-migration backup into a **new** database with `ops/db/restore.sh`, check it with `check_data_integrity`, point `POSTGRES_DB` at it, and redeploy. Never restore over the damaged database; keep it for investigation. |
+
+## 11. Go-live gate
+
+All of these must be true before real data goes into a deployment:
+
+- [ ] Hosting, domain and cost approved by the owner
+- [ ] HTTPS working; `manage.py check --deploy` clean on the host
+- [ ] Proxy check from `reverse-proxy.md` passed, with `CHARITYOS_TRUSTED_PROXIES` set
+- [ ] Error logging fixed (L1) and tested; logs collected and alerts set (section 6)
+- [ ] Backup taken, and a restore drill passed, on the host (section 8)
+- [ ] An encrypted off-machine backup location chosen
+- [ ] PWA fixes SW1 (required) and AU1 (recommended) done, and install tests 4.1–4.5 passed
+- [ ] CI green on the deployed commit
