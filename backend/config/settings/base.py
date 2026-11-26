@@ -140,6 +140,12 @@ REST_FRAMEWORK = {
         "rest_framework.permissions.IsAuthenticated",
     ],
     "EXCEPTION_HANDLER": "api.exceptions.exception_handler",
+    # A JSON body must be an object (api/parsers.py); forms parse as before.
+    "DEFAULT_PARSER_CLASSES": [
+        "api.parsers.ObjectJSONParser",
+        "rest_framework.parsers.FormParser",
+        "rest_framework.parsers.MultiPartParser",
+    ],
 }
 
 SESSION_COOKIE_HTTPONLY = True

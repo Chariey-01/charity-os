@@ -81,10 +81,19 @@ def login_view(request):
     # DRF exempts anonymous requests from CSRF; a login must not be (it would
     # allow login CSRF). Same check DRF applies to session-authenticated writes.
     SessionAuthentication().enforce_csrf(request)
+    email = request.data.get("email", "")
+    password = request.data.get("password", "")
+    wrong_type = {
+        name: ["Must be text."]
+        for name, value in (("email", email), ("password", password))
+        if not isinstance(value, str)
+    }
+    if wrong_type:
+        raise serializers.ValidationError(wrong_type)
     user = authenticate(
         request._request,  # django-axes records attempts on the Django request
-        email=request.data.get("email", ""),
-        password=request.data.get("password", ""),
+        email=email,
+        password=password,
     )
     if not user:
         return Response(
