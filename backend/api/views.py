@@ -60,6 +60,7 @@ from scheduling.services import sync_entry_from_session
 
 from . import serializers as s
 from .archive import ArchivableMixin, NoDeleteMixin, ParentArchived, UseStartAction
+from .reflections import ReflectionMixin
 
 EDIT_INSTEAD = (
     "edit_instead",
@@ -477,15 +478,18 @@ NutritionViewSet = owned_viewset(
     DailyTotalMixin,
     ArchivableMixin,
 )
-DailyReflectionViewSet = owned_viewset(
-    "DailyReflectionViewSet",
-    DailyReflection,
-    s.DailyReflectionSerializer,
-    ArchivableMixin,
-)
-WeeklyReviewViewSet = owned_viewset(
-    "WeeklyReviewViewSet", WeeklyReview, s.WeeklyReviewSerializer, ArchivableMixin
-)
+
+
+class DailyReflectionViewSet(ReflectionMixin, ArchivableMixin, OwnedViewSet):
+    queryset = DailyReflection.objects.all()
+    serializer_class = s.DailyReflectionSerializer
+    natural_key = "local_date"
+
+
+class WeeklyReviewViewSet(ReflectionMixin, ArchivableMixin, OwnedViewSet):
+    queryset = WeeklyReview.objects.all()
+    serializer_class = s.WeeklyReviewSerializer
+    natural_key = "week_start_date"
 
 
 class TaskViewSet(ArchivableMixin, OwnedViewSet):

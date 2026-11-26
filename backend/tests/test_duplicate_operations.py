@@ -11,7 +11,7 @@ from api.constraints import MESSAGES
 from challenges.models import Challenge
 from health.models import DailyNutritionRating, DailyWaterTotal, ExerciseLog, SleepLog
 from planning.models import Area, DailyPlan, DailyPlanItem, Task
-from reflections.models import DailyReflection, WeeklyReview
+from reflections.models import DailyReflection
 from roadmaps.models import (
     Roadmap,
     RoadmapNode,
@@ -57,13 +57,6 @@ def scenarios(user):
         is_primary=True,
     )
     DailyPlan.objects.create(user=user, local_date=DAY, timezone_name="UTC")
-    DailyReflection.objects.create(user=user, local_date=DAY, timezone_name="UTC")
-    WeeklyReview.objects.create(
-        user=user,
-        week_start_date=date(2026, 11, 23),
-        week_end_date=date(2026, 11, 29),
-        timezone_name="UTC",
-    )
     resource_node = node(user, "resources")
     RoadmapResource.objects.create(
         user=user, node=resource_node, label="Docs", url="https://x.org", position=0
@@ -118,22 +111,6 @@ def scenarios(user):
             {"local_date": str(DAY), "timezone_name": "UTC"},
             "local_date",
             DailyPlan,
-        ),
-        (
-            "daily-reflections",
-            {"local_date": str(DAY), "timezone_name": "UTC", "went_well": "again"},
-            "local_date",
-            DailyReflection,
-        ),
-        (
-            "weekly-reviews",
-            {
-                "week_start_date": "2026-11-23",
-                "week_end_date": "2026-11-29",
-                "timezone_name": "UTC",
-            },
-            "week_start_date",
-            WeeklyReview,
         ),
         (
             "roadmap-resources",
@@ -206,13 +183,25 @@ def test_every_duplicate_or_invalid_combination_is_a_field_error(client, user):
 
 
 def test_audit_probe_second_reflection_for_a_day(client):
-    """2026-11-24 audit: the second daily reflection for a day answered 500."""
+    """2026-11-24 audit: the second daily reflection for a day answered 500.
+
+    Phase 0C (S8) defines the duplicate contract for reflections: an identical
+    retry returns the existing record, different words are a 409 conflict
+    (tests/test_reflection_revisions.py). Never a 500, never a second row.
+    """
     body = {"local_date": "2026-11-24", "timezone_name": "UTC", "went_well": "x"}
 
     first = client.post("/api/v1/daily-reflections", body, format="json")
-    second = client.post("/api/v1/daily-reflections", body, format="json")
+    retried = client.post("/api/v1/daily-reflections", body, format="json")
+    different = client.post(
+        "/api/v1/daily-reflections", {**body, "went_well": "y"}, format="json"
+    )
 
-    assert (first.status_code, second.status_code) == (201, 400)
+    assert (first.status_code, retried.status_code, different.status_code) == (
+        201,
+        200,
+        409,
+    )
     assert DailyReflection.objects.count() == 1
 
 

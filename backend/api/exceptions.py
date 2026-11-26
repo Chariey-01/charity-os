@@ -91,7 +91,12 @@ def exception_handler(exc, context):
             fields={field: [message]},
         )
     if isinstance(exc, CodedAPIException):
-        return _error(exc.status_code, exc.default_code, str(exc.detail))
+        return _error(
+            exc.status_code,
+            exc.default_code,
+            str(exc.detail),
+            **getattr(exc, "extra", {}),
+        )
     request = context.get("request")
     instead = getattr(context.get("view"), "delete_instead", None)
     if (
