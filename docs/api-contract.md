@@ -265,7 +265,8 @@ Any failure rolls back every write. A repeated request returns the same task and
 **Sign-in.**
 - `POST /auth/login` needs a valid CSRF token (fetch `/auth/csrf` first). Without one it answers 403.
 - Wrong password and unknown email get the same 400.
-- Five failures per email and IP address are answered normally. The sixth answers 429 `too_many_attempts` and locks that email and IP for 15 minutes. The response is the same whether or not the account exists. A successful sign-in resets the count.
+- Five failures per email and IP address are answered normally. The sixth answers 429 `too_many_attempts` and locks that email and IP for 15 minutes, counted from the latest attempt: an attempt during the lock starts the 15 minutes again. The response is the same whether or not the account exists. A successful sign-in resets the count.
+- The IP address is `REMOTE_ADDR`, or the client address forwarded by a proxy listed in `CHARITYOS_TRUSTED_PROXIES` (see `docs/operations/reverse-proxy.md`).
 - Django admin sign-in follows the same rules.
 
 **Sessions.** `POST /sessions` answers 405 `use_start`. Sessions begin only with `POST /sessions/start`.
@@ -276,3 +277,25 @@ Any failure rolls back every write. A repeated request returns the same task and
 - `erasure_dry_run`, `user_erased`.
 
 Emails are masked (`o***@example.com`) and IP addresses cut to /24 (IPv4) or /48 (IPv6). Passwords, session keys, CSRF tokens and request bodies are never logged.
+
+## Phase 0C review follow-up (implemented)
+
+**Safe retries of creates: `Idempotency-Key`.** Every create on an owned resource accepts an optional `Idempotency-Key` header. This covers tasks, evidence, accomplishments, meal, sleep and exercise logs, roadmaps and their nodes, categories, challenges and capacities. It does not cover `POST /plan-items`, whose create has its own path.
+- **Choosing a key.** Choose one key per user action (one form submission). Reuse it only to retry that action; a new action gets a new key. Keys are 1–255 visible ASCII characters; a random UUID is recommended. Anything else is a 400 `invalid_idempotency_key`.
+- **A retry with the same key, endpoint and body** gets the first successful answer again: the same status and body, plus the header `Idempotent-Replayed: true`. Nothing new is stored. The body is the record as it was created, not as it is now.
+- **The same key with a different body or endpoint** is a 422 `idempotency_key_reused`. Nothing is stored.
+- **A create that failed** (any non-2xx answer) keeps nothing, so it can be retried with the same key.
+- **Two requests with the same key at once:** the second waits for the first, then gets its answer.
+- **Scope and expiry.** Keys belong to one user and last 24 hours. After that, the same key creates again.
+- **No header, no change.** Requests without a key are never deduplicated.
+- **Endpoints that were already idempotent are unchanged:** sessions and schedule entries (client id), Add to Today, daily water and nutrition, reflections and weekly reviews.
+- The bundled client sends a key when it saves evidence from the focus finish sheet.
+
+**Request bodies.** A JSON body must be an object. An array, string, number or `null` is a 400, where some endpoints previously failed with a 500. Sign-in answers a 400 field error when `email` or `password` is not text.
+
+**Reflections and weekly reviews.** A create that races its own retry gets the same answer as a later retry: 200 with the stored record for the same words, or 409 `already_exists` for different words. It no longer gets a generic 409 `conflict`.
+
+**Metrics.** Send either `period` or `start`/`end`. Both together are a 400 field error naming the date. Previously the dates were silently ignored, or the period was.
+
+**Erasure.** `erase_user` also removes the account's sign-in sessions, listed as `sessions.Session` in the dry run.
+

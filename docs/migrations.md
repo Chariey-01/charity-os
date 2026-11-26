@@ -88,11 +88,13 @@ Apply these with `ops/db/migrate-with-backup.sh --database NAME`.
 |---|---|---|---|---|
 | `reflections.0003_reflection_revisions` | `reflections.0002` | `version` (default 1) on `DailyReflection` and `WeeklyReview`. The constant default adds the column without rewriting the table. Adds `ReflectionRevision`: one parent, versions unique per parent, `RESTRICT` parent links. | **Refuses while any revision exists** | Dropping the table would erase earlier wording. Back up and remove revisions deliberately first. |
 | `axes.0001`–`axes.0010` (django-axes 9.1.0, third party) | Django auth | Tables for sign-in attempts, lock expiries and optional logs. No CharityOS data. | Yes (`migrate axes zero`) | Lockout state is lost; no history. |
+| `api.0001_idempotency_keys` (0C review) | `users` (the user model) | Adds `api_idempotencykey`: per user, a client key, the request fingerprint and the first successful answer. Unique per user and key; indexed by creation time. No existing table is changed. | Yes (`migrate api zero`) | Only replay records are lost. They expire after 24 hours anyway, so retries in flight would create again. |
 
 Verified:
 - **`reflections.0003`:**
   - `tests/test_reflection_migration.py` covers it: constant-default column adds and the new table, with no `UPDATE`;
   - old-shape reflections round-trip with every column intact;
   - the reverse is refused while a revision exists.
+- **`api.0001`:** `tests/test_idempotency_migration.py` checks that the SQL only creates its own table, and that forward, back and forward again leave every other table's rows unchanged.
 - **The restore drill** (`--migrate`) applies, reverses and re-applies all of these on a copy of `charityos_acceptance`, with every row identical after the reversal.
 

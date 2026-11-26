@@ -151,9 +151,11 @@ The unit expects the checkout at `~/Progress_tracker`; adjust `WorkingDirectory`
 - in Django admin: **Axes → Access attempts**, delete the attempt;
 - from the command line: `python manage.py axes_reset_username <email>`.
 
-Erasing an account with `erase_user` also removes its sign-in attempt records.
+Each attempt during a lock starts the 15 minutes again.
+
+Erasing an account with `erase_user` also removes its sign-in attempt records and its sign-in sessions.
 
 **Security events** go to stderr as `event=... email=o***@example.com ip=198.51.100.0/24 ...`. In production, keep that stream with the platform's logs. The log never contains passwords, session keys, CSRF tokens or full emails.
 
-**Behind a reverse proxy,** every request appears to come from the proxy. Before deploying, set `AXES_CLIENT_IP_CALLABLE` to read only the proxy's trusted forwarded-for header. Otherwise lockouts would apply to everyone at once.
+**Behind a reverse proxy,** every request appears to come from the proxy, so lockouts would apply to everyone at once. Do not point django-axes at a forwarded header directly: clients can forge it. Set `CHARITYOS_TRUSTED_PROXIES` instead, as described in [reverse-proxy.md](reverse-proxy.md).
 
