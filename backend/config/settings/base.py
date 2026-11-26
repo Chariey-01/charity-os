@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -20,6 +21,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
+    "axes",
     "api",
     "users",
     "challenges",
@@ -39,7 +41,28 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    # Last, as django-axes requires: it turns a lockout into the 429 response.
+    "axes.middleware.AxesMiddleware",
 ]
+
+# Login throttling (owner decision 4.4, Phase 0C S11): five failures per email
+# and IP address are answered normally; the sixth failure is refused with 429
+# and locks that combination for 15 minutes. A success resets the count. Covers
+# the API login and the Django admin login alike.
+AUTHENTICATION_BACKENDS = [
+    "axes.backends.AxesStandaloneBackend",
+    "django.contrib.auth.backends.ModelBackend",
+]
+AXES_FAILURE_LIMIT = 6  # axes counts the failure that triggers the lock
+AXES_COOLOFF_TIME = timedelta(minutes=15)
+AXES_LOCKOUT_PARAMETERS = [["username", "ip_address"]]
+AXES_RESET_ON_SUCCESS = True
+AXES_USERNAME_CALLABLE = "config.security.axes_username"
+AXES_LOCKOUT_CALLABLE = "config.security.lockout_response"
+# Our own security log records these events with masked emails (S12); axes'
+# verbose log and per-success access log would store raw emails instead.
+AXES_VERBOSE = False
+AXES_DISABLE_ACCESS_LOG = True
 ROOT_URLCONF = "config.urls"
 TEMPLATES = [
     {
@@ -87,7 +110,10 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 AUTH_USER_MODEL = "users.User"
 # USERNAME_FIELD is protected by a functional unique constraint so mixed-case
 # writes outside the model layer cannot bypass email uniqueness.
-SILENCED_SYSTEM_CHECKS = ["auth.E003"]
+# Email is unique case-insensitively by the users_user_email_ci_unique
+# constraint, not by unique=True. Django reports that as auth.E003 with the
+# default backend and as auth.W004 with custom backends (django-axes).
+SILENCED_SYSTEM_CHECKS = ["auth.E003", "auth.W004"]
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [

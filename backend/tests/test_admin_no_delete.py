@@ -28,8 +28,11 @@ def test_no_registered_model_can_be_deleted_from_admin(superuser):
     request.user = superuser
 
     for model, model_admin in admin.site._registry.items():
-        if model._meta.app_label in {"auth"}:
-            continue  # Django's own groups; they hold no CharityOS records
+        if model._meta.app_label in {"auth", "axes"}:
+            # Django's groups and django-axes' sign-in attempts hold no CharityOS
+            # history. Deleting an attempt in the admin is how a locked-out
+            # email and IP address are unlocked before the 15 minutes pass.
+            continue
         assert model_admin.has_delete_permission(request) is False, model
         assert "delete_selected" not in model_admin.get_actions(request), model
 

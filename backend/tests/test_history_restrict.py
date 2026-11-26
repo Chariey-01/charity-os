@@ -45,7 +45,14 @@ BEFORE_RESTRICT = {
 
 def test_history_links_restrict_and_only_user_links_cascade():
     for model in apps.get_models():
-        if model._meta.app_label in {"admin", "auth", "contenttypes", "sessions"}:
+        # Django's and django-axes' own tables hold no CharityOS history.
+        if model._meta.app_label in {
+            "admin",
+            "auth",
+            "contenttypes",
+            "sessions",
+            "axes",
+        }:
             continue
         for field in model._meta.get_fields():
             if not isinstance(field, models.ForeignKey):  # includes OneToOneField

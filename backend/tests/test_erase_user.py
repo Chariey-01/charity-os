@@ -111,3 +111,27 @@ def test_any_difference_from_the_plan_rolls_everything_back(people, monkeypatch)
         erase("gone@example.com", "--confirm", "gone@example.com")
 
     assert (rows_of(gone.pk), rows_of(keep.pk)) == before
+
+
+def test_erasure_also_removes_the_accounts_login_attempt_records(people):
+    from axes.models import AccessAttempt
+
+    keep, gone, _ = people
+    for email in ("Gone@Example.com", "keep@example.com"):
+        AccessAttempt.objects.create(
+            username=email,
+            ip_address="198.51.100.7",
+            user_agent="test",
+            get_data="",
+            post_data="",
+            http_accept="*/*",
+            path_info="/api/v1/auth/login",
+            failures_since_start=2,
+        )
+
+    dry_run = erase("gone@example.com")
+    erase("gone@example.com", "--confirm", "gone@example.com")
+
+    assert "axes.AccessAttempt" in dry_run
+    remaining = list(AccessAttempt.objects.values_list("username", flat=True))
+    assert remaining == ["keep@example.com"]

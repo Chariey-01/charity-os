@@ -80,6 +80,23 @@ def erasure_plan(user):
     return {label: len(pks) for label, pks in sorted(rows.items()) if pks}
 
 
+# django-axes keeps failed sign-in attempts by email (no foreign key), so the
+# deletion collector cannot see them. They are personal data of the account.
+LOGIN_RECORD_MODELS = ("axes.AccessAttempt", "axes.AccessFailureLog", "axes.AccessLog")
+
+
+def login_records(email):
+    """{label: queryset} of sign-in records kept under this email."""
+    found = {}
+    for label in LOGIN_RECORD_MODELS:
+        try:
+            model = apps.get_model(label)
+        except LookupError:
+            continue
+        found[label] = model.objects.filter(username__iexact=email)
+    return found
+
+
 def other_users_rows(user_id):
     """Row counts of every per-user table, excluding ``user_id``'s rows."""
     user_model = get_user_model()
@@ -119,6 +136,14 @@ class Command(BaseCommand):
         with transaction.atomic():
             user = user_model.objects.select_for_update().get(pk=user.pk)
             plan = erasure_plan(user)
+            records = login_records(user.email)
+            plan.update(
+                {
+                    label: rows.count()
+                    for label, rows in records.items()
+                    if rows.exists()
+                }
+            )
             self._show(user, plan)
             if confirm is None:
                 self.stdout.write(
@@ -131,6 +156,10 @@ class Command(BaseCommand):
             user_id = user.pk
             others_before = other_users_rows(user_id)
             _, deleted = user.delete()
+            for rows in records.values():
+                for label, count in rows.delete()[1].items():
+                    if label in LOGIN_RECORD_MODELS:  # expirations cascade with them
+                        deleted[label] = deleted.get(label, 0) + count
             deleted = {
                 label: count for label, count in sorted(deleted.items()) if count
             }

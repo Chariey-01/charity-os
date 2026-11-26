@@ -10,6 +10,7 @@ from django.db.models import Sum
 from django.middleware.csrf import get_token
 from django.utils import timezone
 from rest_framework import serializers, viewsets
+from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -77,8 +78,11 @@ def csrf(request):
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def login_view(request):
+    # DRF exempts anonymous requests from CSRF; a login must not be (it would
+    # allow login CSRF). Same check DRF applies to session-authenticated writes.
+    SessionAuthentication().enforce_csrf(request)
     user = authenticate(
-        request,
+        request._request,  # django-axes records attempts on the Django request
         email=request.data.get("email", ""),
         password=request.data.get("password", ""),
     )
