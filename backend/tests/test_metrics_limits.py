@@ -133,3 +133,14 @@ def test_history_outside_the_window_is_not_loaded(
     assert response.status_code == 200
     assert response.json()["total_focused_minutes"] == 30 + 698 * 5
     assert len(loaded) <= 7  # only the window's sessions, not 699
+
+
+def test_every_period_the_insights_screen_sends_is_accepted(client):
+    """InsightsScreen calls /analytics/metrics for roadmap progress with its own
+    period, mapping "all" to "year"."""
+    from scheduling.insights import PERIODS
+
+    for period in PERIODS:
+        sent = "year" if period == "all" else period
+        response = metrics(client, f"?period={sent}")
+        assert response.status_code == 200, period
