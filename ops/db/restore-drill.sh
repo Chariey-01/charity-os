@@ -77,7 +77,9 @@ trap finish EXIT
 
 log "restore drill of $SOURCE into $TARGET"
 log "tools: $(pg_dump --version); $(pg_restore --version); server $(psql_ro postgres 'SHOW server_version')"
-BACKUP="$("$OPS_DB_DIR/backup.sh" --database "$SOURCE" --root "$ROOT" --label drill | sed -n 's/^BACKUP=//p')"
+# --no-prune: a drill must never delete earlier backups, including other drills'
+# evidence. Retention never deletes "drill" backups either (retention.py).
+BACKUP="$("$OPS_DB_DIR/backup.sh" --database "$SOURCE" --root "$ROOT" --label drill --no-prune | sed -n 's/^BACKUP=//p')"
 [[ -n "$BACKUP" ]] || die "backup failed"
 log "backup: $BACKUP"
 log "manifest: tables=$(manifest_value "$BACKUP" tables) rows=$(manifest_value "$BACKUP" total_rows) dump_sha256=$(manifest_value "$BACKUP" dump_sha256)"

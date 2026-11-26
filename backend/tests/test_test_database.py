@@ -49,6 +49,8 @@ def test_override_wins_when_it_is_safe(tmp_path):
     [
         "charityos",  # no test_ prefix: could be a real database
         "test_charityos",  # the old shared database
+        "test_charityos_p2",  # created by another session
+        "test_charityos_f794a3f543",  # another checkout's automatic name
         "test_Upper",
         "test_with-dash",
         "test_" + "x" * 59,  # longer than PostgreSQL's 63-character limit

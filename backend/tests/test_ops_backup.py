@@ -61,6 +61,15 @@ def test_recent_pre_migrate_backups_are_kept_even_on_a_busy_day():
     assert old in deleted  # older than 30 days and not the newest of its day/week
 
 
+def test_drill_backups_are_evidence_and_never_pruned():
+    first = name(NOW - timedelta(hours=5), "drill")
+    second = name(NOW - timedelta(hours=1), "drill")
+    old = name(NOW - timedelta(days=200), "drill")
+    newer_manual = name(NOW)
+
+    assert retention.plan_deletions([first, second, old, newer_manual], NOW) == []
+
+
 def test_retention_never_deletes_the_newest_unknown_or_future_backups():
     future = name(NOW + timedelta(days=3))
     newest = name(NOW)

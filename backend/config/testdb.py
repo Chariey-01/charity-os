@@ -21,6 +21,10 @@ from django.core.exceptions import ImproperlyConfigured
 OVERRIDE_VARIABLE = "CHARITYOS_TEST_DB"
 # The old shared name. Other sessions may still hold data in it; never reuse it.
 PROTECTED_NAMES = frozenset({"test_charityos"})
+# Reserved for the legacy shared database, every checkout's automatic name and
+# databases other sessions created (e.g. test_charityos_p2). An override in this
+# namespace could make pytest-django drop one of them, so overrides may not use it.
+RESERVED_PREFIX = "test_charityos"
 VALID_NAME = re.compile(r"^test_[a-z0-9_]{1,58}$")
 
 
@@ -45,6 +49,12 @@ def test_database_name(checkout_dir, environ, main_database_name):
         raise ImproperlyConfigured(
             f"Refusing to use the shared test database {name!r}. Unset "
             f"{OVERRIDE_VARIABLE} to get this checkout's own test database."
+        )
+    if environ.get(OVERRIDE_VARIABLE) and name.startswith(RESERVED_PREFIX):
+        raise ImproperlyConfigured(
+            f"{OVERRIDE_VARIABLE}={name!r} is in the reserved {RESERVED_PREFIX}* "
+            "namespace (other checkouts and sessions use it). Choose another "
+            "test_ name."
         )
     if name == main_database_name:
         raise ImproperlyConfigured(

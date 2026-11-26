@@ -36,6 +36,7 @@ After each successful backup, older backups of the same database are pruned. The
 - the newest backup of each of the 14 most recent days that have one;
 - the newest backup of each of the 8 most recent ISO weeks that have one;
 - every `pre-migrate` backup younger than 30 days;
+- every `drill` backup, because a drill report names it as its evidence. Drills also never prune;
 - anything dated in the future.
 
 Only folders whose manifest names the same database are ever deleted. Use `--no-prune` to skip retention.
