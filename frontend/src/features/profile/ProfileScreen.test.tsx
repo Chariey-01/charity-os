@@ -40,6 +40,37 @@ test("categories: archive and restore through the archive actions, never by edit
   expect(api.writes().some((call) => call.body && "archived_at" in call.body)).toBe(false);
 });
 
+test("reflection: an existing day is edited with its version, never posted twice", async () => {
+  window.location.hash = "#/profile/reflect";
+  const existing = { id: "r1", version: 3, local_date: TODAY, went_well: "Old words", learned: "L", improve: "I" };
+  const api = mockApi({
+    "/daily-reflections": [existing],
+    "PATCH /daily-reflections/r1": (call: { body: Record<string, unknown> }) => ({ ...existing, ...call.body, version: 4 }),
+  });
+  render(<App />);
+  expect(await screen.findByDisplayValue("Old words")).toBeInTheDocument();
+  expect(screen.getByText(/keeps your earlier wording/)).toBeInTheDocument();
+
+  fireEvent.change(screen.getByLabelText("What went well?"), { target: { value: "New words" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+  await waitFor(() => expect(api.writes()).toHaveLength(1));
+  expect(api.writes()[0]).toMatchObject({ method: "PATCH", path: "/daily-reflections/r1", body: { went_well: "New words", expected_version: 3 } });
+  expect(await screen.findByText(/earlier wording is kept/)).toBeInTheDocument();
+});
+
+test("reflection: a new day is created once", async () => {
+  window.location.hash = "#/profile/reflect";
+  const api = mockApi({ "/daily-reflections": [], "POST /daily-reflections": { id: "r9", version: 1, local_date: TODAY, went_well: "A", learned: "B", improve: "C" } });
+  render(<App />);
+  fireEvent.change(await screen.findByLabelText("What went well?"), { target: { value: "A" } });
+  fireEvent.change(screen.getByLabelText("What did you learn?"), { target: { value: "B" } });
+  fireEvent.change(screen.getByLabelText("What will you improve?"), { target: { value: "C" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save reflection" }));
+  await waitFor(() => expect(api.writes().map((call) => `${call.method} ${call.path}`)).toEqual(["POST /daily-reflections"]));
+  expect(api.writes()[0].body).toMatchObject({ local_date: TODAY, went_well: "A" });
+});
+
 test("reminder settings save preferences and state that reminders need the app open", async () => {
   window.location.hash = "#/profile/reminders";
   const api = mockApi({ "PATCH /preferences": (call: { body: Record<string, unknown> }) => ({ ...prefs, ...call.body }) });

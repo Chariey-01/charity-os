@@ -502,45 +502,87 @@ function HealthLog() {
   );
 }
 
+type ReflectionRecord = {
+  id: string;
+  version: number;
+  local_date?: string;
+  week_start_date?: string;
+  went_well?: string;
+  learned?: string;
+  improve?: string;
+  wins?: string;
+  lessons?: string;
+  next_week?: string;
+};
+
+// A day's reflection (or a week's review) is written once and then edited.
+// Every edit sends its version; the server keeps the earlier wording as a
+// revision, so nothing is overwritten silently.
 function Reflect() {
   const app = useApp();
   const [weekly, setWeekly] = useState(false);
+  const [existing, setExisting] = useState<ReflectionRecord | null>(null);
+  const [loaded, setLoaded] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const start = weekStart(app.today);
+  const path = weekly ? "/weekly-reviews" : "/daily-reflections";
+  const fields = weekly ? (["wins", "lessons", "next_week"] as const) : (["went_well", "learned", "improve"] as const);
+
+  useEffect(() => {
+    setLoaded(false);
+    setExisting(null);
+    setMessage("");
+    setError("");
+    api<ReflectionRecord[]>(path)
+      .then((rows) => setExisting(rows.find((row) => (weekly ? row.week_start_date === start : row.local_date === app.today)) ?? null))
+      .catch(() => setError("Could not load your earlier reflection"))
+      .finally(() => setLoaded(true));
+  }, [path, weekly, start, app.today]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
-    const tz = app.user.timezone;
+    const words = Object.fromEntries(fields.map((field, index) => [field, data.get(["a", "b", "c"][index])]));
     setError("");
     try {
-      if (weekly) {
-        const start = weekStart(app.today);
-        await post("/weekly-reviews", { week_start_date: start, week_end_date: addDays(start, 6), timezone_name: tz, wins: data.get("a"), lessons: data.get("b"), next_week: data.get("c"), closed_at: new Date().toISOString() });
+      if (existing) {
+        setExisting(await patch<ReflectionRecord>(`${path}/${existing.id}`, { ...words, expected_version: existing.version }));
+        setMessage("Updated. Your earlier wording is kept in its history.");
       } else {
-        await post("/daily-reflections", { local_date: app.today, timezone_name: tz, went_well: data.get("a"), learned: data.get("b"), improve: data.get("c"), closed_at: new Date().toISOString() });
+        const tz = app.user.timezone;
+        const period = weekly ? { week_start_date: start, week_end_date: addDays(start, 6) } : { local_date: app.today };
+        setExisting(await post<ReflectionRecord>(path, { ...period, timezone_name: tz, ...words, closed_at: new Date().toISOString() }));
+        setMessage(weekly ? "Weekly review saved" : "Day closed");
       }
-      setMessage(weekly ? "Weekly review saved" : "Day closed");
-      event.currentTarget?.reset();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save");
     }
   }
 
+  const labels = weekly ? ["Wins", "Lessons", "Next week"] : ["What went well?", "What did you learn?", "What will you improve?"];
   return (
     <>
       <div className="segmented" role="tablist" aria-label="Reflection type">
         <button type="button" role="tab" aria-selected={!weekly} className={!weekly ? "selected" : ""} onClick={() => setWeekly(false)}>Daily</button>
         <button type="button" role="tab" aria-selected={weekly} className={weekly ? "selected" : ""} onClick={() => setWeekly(true)}>Weekly review</button>
       </div>
-      <form className="panel form" onSubmit={submit}>
-        <label className="field"><span>{weekly ? "Wins" : "What went well?"}</span><textarea name="a" rows={3} required /></label>
-        <label className="field"><span>{weekly ? "Lessons" : "What did you learn?"}</span><textarea name="b" rows={3} required /></label>
-        <label className="field"><span>{weekly ? "Next week" : "What will you improve?"}</span><textarea name="c" rows={3} required /></label>
-        {error && <p className="form-error" role="alert">{error}</p>}
-        <button className="button">Save reflection</button>
-        {message && <p className="success" role="status">{message}</p>}
-      </form>
+      {!loaded ? (
+        <Loading />
+      ) : (
+        <form className="panel form" onSubmit={submit} key={`${path}-${existing?.id ?? "new"}-${existing?.version ?? 0}`}>
+          {existing && <p className="muted">You already wrote this one. Saving keeps your earlier wording in its history.</p>}
+          {labels.map((label, index) => (
+            <label className="field" key={label}>
+              <span>{label}</span>
+              <textarea name={["a", "b", "c"][index]} rows={3} required defaultValue={existing?.[fields[index]] ?? ""} />
+            </label>
+          ))}
+          {error && <p className="form-error" role="alert">{error}</p>}
+          <button className="button">{existing ? "Save changes" : "Save reflection"}</button>
+          {message && <p className="success" role="status">{message}</p>}
+        </form>
+      )}
     </>
   );
 }
