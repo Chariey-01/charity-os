@@ -47,13 +47,42 @@ def start_session(
         raise ValidationError("A focus session is already open.") from error
 
 
+class SessionVersionConflict(ValidationError):
+    """Answered as HTTP 409 with error.code "version_conflict"."""
+
+    code_name = "version_conflict"
+    http_status = 409
+
+    def __init__(self):
+        super().__init__(
+            "This focus session changed on another device. Refresh and try again."
+        )
+
+
+def parse_version(value):
+    """``expected_version`` as an int, or None when absent. Never a raw string:
+    "2" and 2 are the same version, and "two" is a field error, not a 500."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        raise ValidationError({"expected_version": "Send a whole number."})
+    try:
+        number = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError({"expected_version": "Send a whole number."}) from exc
+    if number < 1 or str(number) != str(value).strip():
+        raise ValidationError({"expected_version": "Send a whole number."})
+    return number
+
+
 def _locked(user, session_id):
     return FocusSession.objects.select_for_update().get(pk=session_id, user=user)
 
 
 def _version(session, expected_version):
-    if expected_version is not None and session.version != expected_version:
-        raise ValidationError("Session version conflict.")
+    expected = parse_version(expected_version)
+    if expected is not None and session.version != expected:
+        raise SessionVersionConflict()
 
 
 @transaction.atomic

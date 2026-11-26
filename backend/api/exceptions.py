@@ -47,8 +47,10 @@ def exception_handler(exc, context):
     """
     if isinstance(exc, DjangoValidationError):
         message, fields = _flatten(exc)
-        status = 409 if isinstance(exc, ScheduleConflict) else 400
-        code = exc.code_name if isinstance(exc, ScheduleConflict) else "invalid"
+        # Domain errors may carry their own code and status (e.g. 409 conflicts).
+        conflict = isinstance(exc, ScheduleConflict)
+        status = 409 if conflict else getattr(exc, "http_status", 400)
+        code = getattr(exc, "code_name", None) or "invalid"
         error = {"code": code, "message": message, "fields": fields}
         if isinstance(exc, ScheduleOverlap):
             error["conflicts"] = [
