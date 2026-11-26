@@ -61,6 +61,7 @@ from scheduling.services import sync_entry_from_session
 
 from . import serializers as s
 from .archive import ArchivableMixin, NoDeleteMixin, ParentArchived, UseStartAction
+from .idempotency import IdempotentCreateMixin
 from .reflections import ReflectionMixin
 
 EDIT_INSTEAD = (
@@ -140,7 +141,7 @@ def me(request):
     )
 
 
-class OwnedViewSet(viewsets.ModelViewSet):
+class OwnedViewSet(IdempotentCreateMixin, viewsets.ModelViewSet):
     def get_queryset(self):
         return self.queryset.filter(user=self.request.user).order_by("-pk")
 
