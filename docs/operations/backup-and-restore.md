@@ -144,3 +144,16 @@ The unit expects the checkout at `~/Progress_tracker`; adjust `WorkingDirectory`
 - **Recovery point.** There is no WAL archiving or point-in-time recovery. A restore returns the database to the moment of the chosen backup, so with nightly backups up to a day of changes can be lost. Back up manually before risky work; the migrate wrapper does this for migrations.
 - **Versions.** The local cluster and client tools are PostgreSQL 16; compose and CI use 17. A dump from a 17 server needs 17 client tools to back up and to restore. The scripts refuse mismatched versions rather than producing a partial dump. In CI, whose client tools are older than its Postgres 17 service, the backup and restore round-trip tests skip with that reason; the refusal tests still run.
 - **Fingerprints.** They compare row text, so they detect any change of content, including changes in column order made by an unusual migration. The drill's backward step relies on migrations restoring the original columns.
+
+## Sign-in lockouts and the security log
+
+**Unlocking a sign-in.** After five failed sign-ins from one IP address, the sixth locks that email and IP for 15 minutes. To unlock it early, do either of these:
+- in Django admin: **Axes → Access attempts**, delete the attempt;
+- from the command line: `python manage.py axes_reset_username <email>`.
+
+Erasing an account with `erase_user` also removes its sign-in attempt records.
+
+**Security events** go to stderr as `event=... email=o***@example.com ip=198.51.100.0/24 ...`. In production, keep that stream with the platform's logs. The log never contains passwords, session keys, CSRF tokens or full emails.
+
+**Behind a reverse proxy,** every request appears to come from the proxy. Before deploying, set `AXES_CLIENT_IP_CALLABLE` to read only the proxy's trusted forwarded-for header. Otherwise lockouts would apply to everyone at once.
+

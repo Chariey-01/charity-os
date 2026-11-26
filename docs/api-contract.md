@@ -242,3 +242,37 @@ Any failure rolls back every write. A repeated request returns the same task and
 - cross-roadmap parents;
 - links between different users' records;
 - linked entries that disagree with their focus session.
+
+## Security hardening (implemented, Phase 0C)
+
+**Reflections and weekly reviews.**
+- Each record has a `version`.
+- `PATCH` (or `PUT`) needs `expected_version`. A missing version is a 400; a stale one is a 409 `version_conflict`.
+- Only the words can change: `went_well`, `learned`, `improve`, `mood`, `closed_at`, or `wins`, `lessons`, `next_week`, `closed_at`. Any other field is refused by name.
+- Every real change first stores the previous words as a revision. `GET .../<id>/revisions` lists them, newest first: `{version, content, replaced_at}`.
+- A create for a day or week that already has one returns the existing record (200) when the words are the same (a retry). Different words are a 409 `already_exists` with `existing_id`; the stored record is never overwritten.
+- An archived record must be restored before it can be edited.
+
+**Metrics.** `/analytics/metrics` accepts `period` (`7d`, `30d`, `90d`, `year` or `challenge`), or `start` and `end`.
+- A range may span at most 366 days. A longer range, an end before the start, a malformed date or an unknown period is a 400 field error.
+- The day-by-day series read only the window. The all-time totals are aggregated in the database.
+
+**Evidence.** The rules are checked against the stored record merged with the update, on create and on every update:
+- notes need text;
+- `url` and `github` evidence need an HTTPS URL (plain `http` only for localhost in DEBUG);
+- `github` evidence must point at github.com.
+
+**Sign-in.**
+- `POST /auth/login` needs a valid CSRF token (fetch `/auth/csrf` first). Without one it answers 403.
+- Wrong password and unknown email get the same 400.
+- Five failures per email and IP address are answered normally. The sixth answers 429 `too_many_attempts` and locks that email and IP for 15 minutes. The response is the same whether or not the account exists. A successful sign-in resets the count.
+- Django admin sign-in follows the same rules.
+
+**Sessions.** `POST /sessions` answers 405 `use_start`. Sessions begin only with `POST /sessions/start`.
+
+**Security log.** The `charityos.security` logger, on stderr, records these events:
+- `login_succeeded`, `login_failed`, `login_locked_out`, `logout`;
+- `csrf_rejected`;
+- `erasure_dry_run`, `user_erased`.
+
+Emails are masked (`o***@example.com`) and IP addresses cut to /24 (IPv4) or /48 (IPv6). Passwords, session keys, CSRF tokens and request bodies are never logged.

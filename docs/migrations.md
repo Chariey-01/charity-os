@@ -80,3 +80,19 @@ That branch, built on the same base, adds `planning.0009_task_project_fields`, `
 
 **No migrations.** Phase 0B changes validation, services and the API only, so the schema is the Gate 0A schema. The restore drill (`--migrate`) still runs all 13 pending migrations forward, back and forward again on a copy of `charityos_acceptance`. `manage.py check_data_integrity` passes on the migrated copy.
 
+## Phase 0C security hardening (branch `feature/security-hardening`)
+
+Apply these with `ops/db/migrate-with-backup.sh --database NAME`.
+
+| Migration | Depends on | Effect | Reversible | Rollback notes |
+|---|---|---|---|---|
+| `reflections.0003_reflection_revisions` | `reflections.0002` | `version` (default 1) on `DailyReflection` and `WeeklyReview`. The constant default adds the column without rewriting the table. Adds `ReflectionRevision`: one parent, versions unique per parent, `RESTRICT` parent links. | **Refuses while any revision exists** | Dropping the table would erase earlier wording. Back up and remove revisions deliberately first. |
+| `axes.0001`–`axes.0010` (django-axes 9.1.0, third party) | Django auth | Tables for sign-in attempts, lock expiries and optional logs. No CharityOS data. | Yes (`migrate axes zero`) | Lockout state is lost; no history. |
+
+Verified:
+- **`reflections.0003`:**
+  - `tests/test_reflection_migration.py` covers it: constant-default column adds and the new table, with no `UPDATE`;
+  - old-shape reflections round-trip with every column intact;
+  - the reverse is refused while a revision exists.
+- **The restore drill** (`--migrate`) applies, reverses and re-applies all of these on a copy of `charityos_acceptance`, with every row identical after the reversal.
+
