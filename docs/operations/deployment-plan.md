@@ -72,7 +72,7 @@ Follow [reverse-proxy.md](reverse-proxy.md). **Deployment stays blocked until it
   - HTTP 5xx responses;
   - the process restarting.
 - **Uptime.** Check `GET /api/v1/auth/csrf` every few minutes (it is anonymous and answers 200).
-- **Django errors: required fix before deployment (L1).** With production settings (`DEBUG = False`), an unhandled exception's traceback is written **nowhere**. Django's console handler only works in debug mode, and its admin-email handler has no `ADMINS` to send to. Verified on 26 Nov by loading the production settings: the `django` logger has only those two handlers, and `django.request` has none of its own. Before deploying, add a `django.request` handler at `ERROR` to stderr in `LOGGING`, with a test, and collect stderr.
+- **Django errors (L1, fixed on `feature/daily-operations`).** Unhandled exceptions and `django.security` errors are written to stderr, one redacted line plus the traceback each (`config/error_logging.py`): emails masked, password, token, secret, session, CSRF and Authorization values replaced, and the path without its query string. Gunicorn writes its own access and error lines to stderr as well (`--access-logfile - --error-logfile -`). Collect stderr. Without `DEBUG`, nothing else writes these errors.
 
 ## 7. Backups and retention
 
@@ -108,8 +108,10 @@ All of these must be true before real data goes into a deployment:
 - [ ] Hosting, domain and cost approved by the owner
 - [ ] HTTPS working; `manage.py check --deploy` clean on the host
 - [ ] Proxy check from `reverse-proxy.md` passed, with `CHARITYOS_TRUSTED_PROXIES` set
-- [ ] Error logging fixed (L1) and tested; logs collected and alerts set (section 6)
+- [x] Error logging fixed (L1) and tested
+- [ ] Logs collected and alerts set (section 6)
 - [ ] Backup taken, and a restore drill passed, on the host (section 8)
 - [ ] An encrypted off-machine backup location chosen
-- [ ] PWA fixes SW1 (required) and AU1 (recommended) done, and install tests 4.1–4.5 passed
+- [x] PWA fixes SW1 and AU1 done (`feature/daily-operations`)
+- [ ] Install tests 4.1–4.5 passed on the deployed site
 - [ ] CI green on the deployed commit
