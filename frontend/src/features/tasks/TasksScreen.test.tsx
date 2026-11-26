@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { expect, test, vi } from "vitest";
 
 import { App } from "../../app/App";
-import { TODAY, json, mockApi } from "../../test/mockApi";
+import { TODAY, entry, json, mockApi } from "../../test/mockApi";
 import type { Task } from "../../lib/types";
 
 function task(overrides: Partial<Task>): Task {
@@ -196,4 +196,22 @@ test("an expired session returns to sign-in with an explanation, without a reloa
   expect(await screen.findByRole("button", { name: "Sign in" })).toBeInTheDocument();
   expect(screen.getByRole("status")).toHaveTextContent("Your session has ended");
   expect(screen.queryByText("Udemy: section 4")).not.toBeInTheDocument();
+});
+
+test("starting focus on a task that is scheduled today starts that activity", async () => {
+  const planned = entry({ id: "e-udemy", title: "Udemy: section 4", task: "t-today", status: "scheduled", tracking: "focus", version: 3 });
+  const api = mockApi({
+    "/tasks": tasksRoute([dueToday]),
+    "/tasks/t-today": dueToday,
+    "/schedule-entries": [planned],
+    "POST /schedule-entries/e-udemy/start": { ...planned, status: "in_progress" },
+    "POST /tasks/t-today/transition": { ...dueToday, status: "in_progress" },
+  });
+  await openTasksTab();
+  fireEvent.click(await screen.findByRole("button", { name: /^Udemy: section 4/ }));
+  fireEvent.click(await within(await screen.findByRole("dialog", { name: "Task" })).findByRole("button", { name: "Start focus" }));
+
+  await waitFor(() => expect(api.writes().map((call) => call.path)).toEqual(["/schedule-entries/e-udemy/start", "/tasks/t-today/transition"]));
+  expect(api.writes()[0].body).toMatchObject({ expected_version: 3 });
+  expect(typeof api.writes()[0].body!.session_id).toBe("string");
 });

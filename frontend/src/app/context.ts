@@ -51,6 +51,13 @@ const FOCUS_SLUGS = new Set([
   "career",
   "ai",
   "reading",
+  // The suggested workstreams (planning.categories.WORKSTREAMS), except
+  // Personal Administration, which is mostly errands and admin.
+  "learning-and-education",
+  "startup-and-entrepreneurship",
+  "client-work-and-income",
+  "career-and-professional-development",
+  "personal-development",
 ]);
 
 export function defaultsToFocus(area: Area | undefined) {

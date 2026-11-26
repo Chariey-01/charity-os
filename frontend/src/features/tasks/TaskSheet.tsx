@@ -5,7 +5,7 @@ import { ErrorState, Icon, Loading, Sheet } from "../../components/ui";
 import { ApiError, api, newId, patch, post } from "../../lib/api";
 import { PRIORITIES, STATUS_LABEL, deferOptions, dueLabel, isOpen, priorityLabel } from "../../lib/tasks";
 import { addDays, durationLabel } from "../../lib/time";
-import type { Roadmap, RoadmapNode, Task } from "../../lib/types";
+import type { Entry, Roadmap, RoadmapNode, Task } from "../../lib/types";
 
 export type TaskSheetMode = "view" | "edit";
 
@@ -355,18 +355,29 @@ function TaskActions({
     act("defer", () => patch<Task>(`/tasks/${task.id}`, status ? { due_date: date, status } : { due_date: date }), date ? `Due ${dueLabel(date, app.today)}` : "Moved to backlog");
 
   async function startFocus() {
-    if (!focusArea) return;
     await act(
       "start focus",
       async () => {
-        await post("/sessions/start", {
+        // If the task is scheduled today and not started, start that activity:
+        // the time then belongs to the plan and finishing it can close the task.
+        const today = await api<Entry[]>(`/schedule-entries?start=${app.today}&end=${addDays(app.today, 1)}`).catch(() => []);
+        const planned = (Array.isArray(today) ? today : []).find((entry) => entry.task === task.id && entry.status === "scheduled");
+        if (planned) {
+          await post(`/schedule-entries/${planned.id}/start`, {
+            expected_version: planned.version,
+            ...(planned.tracking === "focus" ? { session_id: sessionId } : {}),
+          });
+        } else {
+          if (!focusArea) throw new Error("Choose a workstream to track the time under.");
+          await post("/sessions/start", {
           id: sessionId,
           title: task.title,
           area: focusArea,
           is_deep_work: task.is_deep_work_default,
           task: task.id,
           roadmap_item: task.roadmap_item ?? null,
-        });
+          });
+        }
         if (task.status === "todo" || task.status === "backlog") {
           return post<Task>(`/tasks/${task.id}/transition`, { status: "in_progress" });
         }
