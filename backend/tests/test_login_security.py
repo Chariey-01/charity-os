@@ -178,3 +178,78 @@ def test_the_admin_login_is_protected_too(django_user_model):
 
     assert failures == [200] * 5  # the admin re-shows its form on failure
     assert sixth.status_code == afterwards.status_code == 429
+
+
+def age_lock(seconds):
+    """Move the stored attempts and lock expiry ``seconds`` into the past."""
+    from axes.models import AccessAttempt, AccessAttemptExpiration
+
+    AccessAttempt.objects.update(
+        attempt_time=F("attempt_time") - timedelta(seconds=seconds)
+    )
+    AccessAttemptExpiration.objects.update(
+        expires_at=F("expires_at") - timedelta(seconds=seconds)
+    )
+
+
+def locked_client():
+    client = browser()
+    for _ in range(6):
+        login(client, "owner@example.com", "nope")
+    return client
+
+
+@axes_on
+def test_the_lock_still_holds_two_seconds_before_fifteen_minutes(user):
+    client = locked_client()
+    age_lock(15 * 60 - 2)
+
+    assert login(client, "owner@example.com", PASSWORD).status_code == 429
+
+
+@axes_on
+def test_the_lock_is_gone_one_second_after_fifteen_minutes(user):
+    client = locked_client()
+    age_lock(15 * 60 + 1)
+
+    assert login(client, "owner@example.com", PASSWORD).status_code == 200
+
+
+@axes_on
+def test_an_attempt_during_the_lock_starts_the_fifteen_minutes_again(user):
+    """django-axes counts the refused attempt: the lock runs from the last one."""
+    client = locked_client()
+    age_lock(15 * 60 - 2)
+    assert login(client, "owner@example.com", PASSWORD).status_code == 429
+
+    age_lock(3)  # 15:01 after the sixth failure, 0:03 after the latest
+    still_locked = login(client, "owner@example.com", PASSWORD)
+    age_lock(15 * 60 + 1)  # 15:01 after the latest attempt
+    afterwards = login(client, "owner@example.com", PASSWORD)
+
+    assert still_locked.status_code == 429
+    assert afterwards.status_code == 200
+
+
+@axes_on
+def test_sign_in_attempt_records_keep_no_form_secrets(django_user_model):
+    """Review of Phase 0C: the admin form's CSRF token was stored in clear."""
+    from axes.models import AccessAttempt
+
+    django_user_model.objects.create_superuser("admin@example.com", PASSWORD)
+    client = Client(enforce_csrf_checks=True, REMOTE_ADDR="198.51.100.31")
+    client.get("/admin/login/")
+    csrf = client.cookies["csrftoken"].value
+    client.post(
+        "/admin/login/",
+        {
+            "username": "admin@example.com",
+            "password": "Wr0ng-guess-321",
+            "csrfmiddlewaretoken": csrf,
+        },
+    )
+
+    [attempt] = AccessAttempt.objects.all()
+    assert "csrfmiddlewaretoken=" in attempt.post_data  # the field is recorded
+    for secret in (csrf, "Wr0ng-guess-321", "admin@example.com"):
+        assert secret not in attempt.post_data

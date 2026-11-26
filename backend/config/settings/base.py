@@ -63,6 +63,9 @@ AXES_LOCKOUT_CALLABLE = "config.security.lockout_response"
 # verbose log and per-success access log would store raw emails instead.
 AXES_VERBOSE = False
 AXES_DISABLE_ACCESS_LOG = True
+# Masked in the form data axes stores with each failed attempt (it always
+# masks the password). The admin form's CSRF token is a secret of that browser.
+AXES_SENSITIVE_PARAMETERS = ["username", "ip_address", "csrfmiddlewaretoken"]
 ROOT_URLCONF = "config.urls"
 TEMPLATES = [
     {
