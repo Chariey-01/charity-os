@@ -1,6 +1,6 @@
 import uuid
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from django.contrib.auth import authenticate, login, logout
@@ -753,11 +753,20 @@ class SessionViewSet(OwnedViewSet):
         return Response(self.get_serializer(obj).data)
 
 
+METRICS_PERIODS = ("7d", "30d", "90d", "year", "challenge")
+# A year view (366 days in a leap year) is the longest day-by-day series served.
+MAX_METRICS_DAYS = 366
+
+
 @api_view(["GET"])
 def metrics(request):
     tz = ZoneInfo(request.user.timezone)
     today = timezone.localtime(timezone.now(), tz).date()
     period = request.query_params.get("period", "30d")
+    if not request.query_params.get("start") and period not in METRICS_PERIODS:
+        raise serializers.ValidationError(
+            {"period": [f"Use one of: {', '.join(METRICS_PERIODS)}."]}
+        )
     if period == "7d":
         start = today - timedelta(days=6)
     elif period == "90d":
@@ -786,6 +795,18 @@ def metrics(request):
             end = date.fromisoformat(request.query_params["end"])
         except ValueError as exc:
             raise serializers.ValidationError({"end": "Use YYYY-MM-DD."}) from exc
+    if end < start:
+        raise serializers.ValidationError(
+            {"end": ["The end cannot be before the start."]}
+        )
+    if (end - start).days + 1 > MAX_METRICS_DAYS:
+        raise serializers.ValidationError(
+            {"start": [f"Choose a range of at most {MAX_METRICS_DAYS} days."]}
+        )
+    # Day-by-day series read only the window (local days); totals stay all-time
+    # but are aggregated in the database, never loaded row by row.
+    lower = datetime.combine(start, time.min, tzinfo=tz)
+    upper = datetime.combine(end + timedelta(days=1), time.min, tzinfo=tz)
     sessions = FocusSession.objects.filter(user=request.user, status="completed")
     total = sessions.aggregate(value=Sum("duration_seconds"))["value"] or 0
     deep = (
@@ -805,7 +826,9 @@ def metrics(request):
     focus_by_day = defaultdict(int)
     deep_by_day = defaultdict(int)
     area_minutes = defaultdict(int)
-    for session in sessions.select_related("area"):
+    for session in sessions.filter(
+        started_at__gte=lower, started_at__lt=upper
+    ).select_related("area"):
         local_day = timezone.localtime(session.started_at, tz).date()
         if in_range(local_day):
             minutes = (session.duration_seconds or 0) // 60
@@ -816,7 +839,9 @@ def metrics(request):
     planned_by_day = defaultdict(int)
     completed_by_day = defaultdict(int)
     for item in (
-        DailyPlanItem.objects.filter(user=request.user)
+        DailyPlanItem.objects.filter(
+            user=request.user, plan__local_date__range=(start, end)
+        )
         .exclude(state="removed")
         .select_related("plan", "task")
     ):
@@ -826,14 +851,18 @@ def metrics(request):
             if item.task.status == Task.Status.DONE:
                 completed_by_day[key] += 1
     sleep_by_day = defaultdict(float)
-    for sleep in SleepLog.objects.filter(user=request.user):
+    for sleep in SleepLog.objects.filter(
+        user=request.user, wake_local_date__range=(start, end)
+    ):
         local_day = sleep.wake_local_date
         if in_range(local_day):
             sleep_by_day[str(local_day)] += (
                 sleep.woke_at - sleep.started_at
             ).total_seconds() / 3600
     exercise_by_day = defaultdict(int)
-    for exercise in ExerciseLog.objects.filter(user=request.user):
+    for exercise in ExerciseLog.objects.filter(
+        user=request.user, started_at__gte=lower, started_at__lt=upper
+    ):
         local_day = timezone.localtime(exercise.started_at, tz).date()
         if in_range(local_day):
             exercise_by_day[str(local_day)] += int(
