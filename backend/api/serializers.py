@@ -312,10 +312,20 @@ class EvidenceSerializer(OwnedModelSerializer):
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
-        kind, url, note = attrs.get("kind"), attrs.get("url", ""), attrs.get("text", "")
+
+        # Check the record as it will be stored, not just the fields sent: an
+        # update that changes only `url` must still obey its kind's rules.
+        def merged(field):
+            if field in attrs:
+                return attrs[field]
+            return getattr(self.instance, field) if self.instance else ""
+
+        kind, url, note = merged("kind"), merged("url") or "", merged("text") or ""
         if kind == "note" and not note.strip():
             raise serializers.ValidationError({"text": "A note requires text."})
         if kind in ("url", "github"):
+            if not url:
+                raise serializers.ValidationError({"url": "A link requires a URL."})
             parsed = urlparse(url)
             local = parsed.hostname in ("localhost", "127.0.0.1", "::1")
             if parsed.scheme != "https" and not (local and settings.DEBUG):
