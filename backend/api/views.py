@@ -33,6 +33,7 @@ from health.models import (
     SleepLog,
 )
 from planning.models import Area, DailyCapacity, DailyPlan, DailyPlanItem, Task
+from planning.progress import progress as task_progress
 from planning.services import (
     add_node_to_today,
     add_plan_item,
@@ -504,6 +505,23 @@ class WeeklyReviewViewSet(ReflectionMixin, ArchivableMixin, OwnedViewSet):
     queryset = WeeklyReview.objects.all()
     serializer_class = s.WeeklyReviewSerializer
     natural_key = "week_start_date"
+
+
+@api_view(["GET"])
+def progress_view(request):
+    """Overall, weekly and accomplishment figures (planning/progress.py).
+
+    ``week`` is any date in the wanted week; the default is this week.
+    """
+    day = request.query_params.get("week")
+    if day:
+        try:
+            day = date.fromisoformat(day)
+        except ValueError as exc:
+            raise serializers.ValidationError(
+                {"week": ["Use a date like 2026-11-24."]}
+            ) from exc
+    return Response(task_progress(request.user, day))
 
 
 class TaskViewSet(ArchivableMixin, OwnedViewSet):
