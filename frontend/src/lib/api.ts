@@ -71,8 +71,14 @@ export async function api<T>(path: string, init?: RequestInit & { json?: unknown
   return (text ? JSON.parse(text) : null) as T;
 }
 
-export function post<T>(path: string, json: unknown = {}) {
-  return api<T>(path, { method: "POST", json });
+/**
+ * POST JSON. Pass `idempotencyKey` (one per user action, reused only when
+ * retrying that same action) and the server replays its first answer
+ * instead of creating a second record; see backend/api/idempotency.py.
+ */
+export function post<T>(path: string, json: unknown = {}, options: { idempotencyKey?: string } = {}) {
+  const headers = options.idempotencyKey ? { "Idempotency-Key": options.idempotencyKey } : undefined;
+  return api<T>(path, { method: "POST", json, headers });
 }
 
 export function patch<T>(path: string, json: unknown) {

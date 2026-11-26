@@ -92,6 +92,8 @@ function SessionFinishSheet({ session, seconds, onClose }: { session: Session; s
   const [outcome, setOutcome] = useState("");
   const [learning, setLearning] = useState("");
   const [evidence, setEvidence] = useState("");
+  // One finish action, one key: a resend of this evidence cannot store it twice.
+  const [evidenceKey] = useState(newId);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -109,7 +111,7 @@ function SessionFinishSheet({ session, seconds, onClose }: { session: Session; s
           text: isUrl ? "" : text,
           url: isUrl ? text : "",
           session: session.id,
-        });
+        }, { idempotencyKey: evidenceKey });
       }
       app.celebrate(session.title, `${Math.round(seconds / 60)} min of focus`);
       app.refresh();
