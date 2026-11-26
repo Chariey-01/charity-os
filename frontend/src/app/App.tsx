@@ -123,6 +123,13 @@ export function App() {
     boot();
   }, [boot]);
 
+  // Opened offline: try again by itself as soon as the connection is back.
+  useEffect(() => {
+    if (!bootError) return;
+    window.addEventListener("online", boot);
+    return () => window.removeEventListener("online", boot);
+  }, [bootError, boot]);
+
   if (bootError) {
     return (
       <main className="loading" role="alert">
