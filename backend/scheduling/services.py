@@ -220,6 +220,20 @@ def update_entry(
     _lock_user(user)
     entry = _locked(user, entry_id)
     _check_version(entry, expected_version)
+    if entry.focus_session_id:
+        # One attribution per linked pair: the session's. It changes only through
+        # the audited session correction, which updates this entry too.
+        for field in ("area", "task", "roadmap_node"):
+            new = changes.get(field)
+            if field in changes and getattr(entry, f"{field}_id") != (
+                new.pk if new else None
+            ):
+                raise ValidationError(
+                    {
+                        field: "This activity's focus session decides this. "
+                        "Finish the session, then correct it."
+                    }
+                )
     for field in changes:
         if field in ALWAYS_EDITABLE:
             continue
