@@ -147,12 +147,49 @@ RoadmapSerializer = serializer_for(Roadmap)
 
 
 class RoadmapNodeSerializer(OwnedModelSerializer):
+    """Tree changes are validated under the roadmap's row lock: same roadmap,
+    no self or descendant parent, no archived parent, and a node never moves
+    to another roadmap."""
+
     class Meta:
         model = RoadmapNode
         fields = "__all__"
         read_only_fields = ("user", "completed_at")
 
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        roadmap = attrs.get("roadmap")
+        if (
+            self.instance is not None
+            and roadmap
+            and roadmap.pk != self.instance.roadmap_id
+        ):
+            raise serializers.ValidationError(
+                {"roadmap": ["A node cannot move to another roadmap."]}
+            )
+        return attrs
+
+    @transaction.atomic
+    def create(self, validated_data):
+        from roadmaps.services import lock_roadmap, validate_parent
+
+        roadmap = lock_roadmap(
+            user=self.context["request"].user, roadmap_id=validated_data["roadmap"].pk
+        )
+        validate_parent(roadmap=roadmap, parent=validated_data.get("parent"))
+        return super().create(validated_data)
+
+    @transaction.atomic
     def update(self, instance, validated_data):
+        from roadmaps.services import lock_roadmap, validate_parent
+
+        roadmap = lock_roadmap(
+            user=self.context["request"].user, roadmap_id=instance.roadmap_id
+        )
+        if "parent" in validated_data:
+            validate_parent(
+                roadmap=roadmap, parent=validated_data["parent"], node_pk=instance.pk
+            )
         state = validated_data.get("state", instance.state)
         if state == RoadmapNode.State.COMPLETED and instance.state != state:
             from django.utils import timezone

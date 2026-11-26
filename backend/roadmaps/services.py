@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
@@ -5,7 +6,7 @@ from django.utils import timezone
 from execution.models import FocusSession
 from planning.models import Task
 
-from .models import RoadmapNode
+from .models import Roadmap, RoadmapNode
 
 
 class ParentArchivedError(Exception):
@@ -16,7 +17,10 @@ def _active(queryset, include_archived):
     return queryset if include_archived else queryset.filter(archived_at__isnull=True)
 
 
-def node_detail(node, include_archived=False):
+def node_detail(node, include_archived=False, _path=frozenset()):
+    if node.pk in _path:  # a parent cycle in old data; never recurse forever
+        return None
+    path = _path | {node.pk}
     task_ids = list(
         _active(node.tasks.all(), include_archived).values_list("id", flat=True)
     )
@@ -47,10 +51,11 @@ def node_detail(node, include_archived=False):
             str(edge.prerequisite_id) for edge in node.prerequisite_edges.all()
         ],
         "children": [
-            node_detail(child, include_archived)
+            detail
             for child in _active(node.children.all(), include_archived).order_by(
                 "position", "title"
             )
+            if (detail := node_detail(child, include_archived, path)) is not None
         ],
     }
 
@@ -176,3 +181,46 @@ def restore_node(*, user, node):
     ).update(archived_at=None, updated_at=timezone.now())
     node.refresh_from_db()
     return node
+
+
+def _reaches(start, target_pk):
+    """Whether walking up from ``start`` meets ``target_pk``, or an existing
+    cycle (which a parent change must never be attached to)."""
+    seen = set()
+    cursor = start
+    while cursor is not None:
+        if cursor.pk == target_pk or cursor.pk in seen:
+            return True
+        seen.add(cursor.pk)
+        cursor = (
+            RoadmapNode.objects.filter(pk=cursor.parent_id).first()
+            if cursor.parent_id
+            else None
+        )
+    return False
+
+
+def validate_parent(*, roadmap, parent, node_pk=None):
+    """Raise ValidationError unless ``parent`` may hold ``node_pk``.
+
+    Call only while holding the roadmap's row lock (lock_roadmap), so that two
+    concurrent moves cannot together create a cycle.
+    """
+    if parent is None:
+        return
+    parent = RoadmapNode.objects.get(pk=parent.pk)  # current state, under the lock
+    if parent.roadmap_id != roadmap.pk:
+        raise ValidationError({"parent": "The parent must be in the same roadmap."})
+    if node_pk is not None and parent.pk == node_pk:
+        raise ValidationError({"parent": "A node cannot be its own parent."})
+    if parent.archived_at is not None:
+        raise ValidationError({"parent": "The parent is archived. Restore it first."})
+    if node_pk is not None and _reaches(parent, node_pk):
+        raise ValidationError(
+            {"parent": "A node cannot be placed under itself or its descendants."}
+        )
+
+
+def lock_roadmap(*, user, roadmap_id):
+    """Serialise every tree change within one roadmap."""
+    return Roadmap.objects.select_for_update().get(pk=roadmap_id, user=user)

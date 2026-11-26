@@ -7,7 +7,9 @@ from .models import FocusSession, FocusSessionCorrection, SessionPause
 
 def _ancestry(node):
     result = []
-    while node:
+    seen = set()
+    while node and node.pk not in seen:  # stops at a parent cycle in old data
+        seen.add(node.pk)
         result.append({"id": str(node.id), "title": node.title, "type": node.node_type})
         node = node.parent
     return list(reversed(result))
