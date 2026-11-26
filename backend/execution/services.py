@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.utils import timezone
@@ -219,40 +221,120 @@ def end_session(
     return session
 
 
+MAX_SESSION = timedelta(hours=24)
+FUTURE_TOLERANCE = timedelta(minutes=5)
+_UNCHANGED = object()
+
+
+def _record(session):
+    return {
+        "started_at": session.started_at.isoformat(),
+        "ended_at": session.ended_at.isoformat(),
+        "duration_seconds": session.duration_seconds,
+        "area": str(session.area_id),
+        "area_label": session.area_label_snapshot,
+        "task": str(session.task_id) if session.task_id else None,
+        "roadmap_item": str(session.roadmap_item_id)
+        if session.roadmap_item_id
+        else None,
+        "is_deep_work": session.is_deep_work,
+    }
+
+
+def _owned(user, field, value, *, required=False):
+    if value is None:
+        if required:
+            raise ValidationError({field: "This field is required."})
+        return None
+    if value.user_id != user.id:
+        raise ValidationError({field: "Choose one of your own records."})
+    return value
+
+
 @transaction.atomic
 def correct_session(
-    *, user, session_id, reason, started_at=None, ended_at=None, expected_version=None
+    *,
+    user,
+    session_id,
+    reason,
+    expected_version,
+    started_at=None,
+    ended_at=None,
+    area=_UNCHANGED,
+    task=_UNCHANGED,
+    roadmap_item=_UNCHANGED,
+    is_deep_work=None,
 ):
+    """Correct an ended session's times and/or attribution, with an audit record.
+
+    Owner decision 4.5: the linked schedule entry takes the same attribution
+    in the same transaction, so Insights (which reads linked time through the
+    entry) moves the minutes with it. Nothing is written unless every step
+    succeeds.
+    """
     session = _locked(user, session_id)
-    _version(session, expected_version)
+    expected = parse_version(expected_version)
+    if expected is None:
+        raise ValidationError(
+            {"expected_version": "Send the session's current version to correct it."}
+        )
+    if session.version != expected:
+        raise SessionVersionConflict()
     if session.status not in (
         FocusSession.Status.COMPLETED,
         FocusSession.Status.CANCELLED,
     ):
         raise ValidationError("Only a terminal session can be corrected.")
-    if not reason.strip():
-        raise ValidationError("A correction reason is required.")
-    before = {
-        "started_at": session.started_at.isoformat(),
-        "ended_at": session.ended_at.isoformat(),
-        "duration_seconds": session.duration_seconds,
-    }
-    session.started_at = started_at or session.started_at
-    session.ended_at = ended_at or session.ended_at
-    if session.ended_at <= session.started_at:
-        raise ValidationError("The corrected end must follow the start.")
+    if not (reason or "").strip():
+        raise ValidationError({"reason": "A correction reason is required."})
+    before = _record(session)
+
+    start = started_at or session.started_at
+    end = ended_at or session.ended_at
+    if end <= start:
+        raise ValidationError({"ended_at": "The corrected end must follow the start."})
+    if end > timezone.now() + FUTURE_TOLERANCE:
+        raise ValidationError({"ended_at": "A correction cannot end in the future."})
+    if end - start > MAX_SESSION:
+        raise ValidationError({"ended_at": "A session cannot last more than 24 hours."})
+    session.started_at, session.ended_at = start, end
+
+    if area is not _UNCHANGED:
+        area = _owned(user, "area", area, required=True)
+        if area.pk != session.area_id and area.archived_at is not None:
+            raise ValidationError({"area": "This category is archived."})
+        session.area = area
+        session.area_label_snapshot = area.name
+    if task is not _UNCHANGED:
+        task = _owned(user, "task", task)
+        session.task = task
+        session.task_type_snapshot = task.task_type if task else ""
+    if roadmap_item is not _UNCHANGED:
+        roadmap_item = _owned(user, "roadmap_item", roadmap_item)
+        session.roadmap_item = roadmap_item
+        session.roadmap_ancestry_snapshot = (
+            _ancestry(roadmap_item) if roadmap_item else []
+        )
+    if is_deep_work is not None:
+        session.is_deep_work = bool(is_deep_work)
+
     session.duration_seconds = session.elapsed_seconds(at=session.ended_at)
+    after = _record(session)
+    if after == before:
+        raise ValidationError("This correction changes nothing.")
     session.version += 1
-    after = {
-        "started_at": session.started_at.isoformat(),
-        "ended_at": session.ended_at.isoformat(),
-        "duration_seconds": session.duration_seconds,
-    }
     session.save(
         update_fields=(
             "started_at",
             "ended_at",
             "duration_seconds",
+            "area",
+            "area_label_snapshot",
+            "task",
+            "task_type_snapshot",
+            "roadmap_item",
+            "roadmap_ancestry_snapshot",
+            "is_deep_work",
             "version",
             "updated_at",
         )
@@ -260,4 +342,8 @@ def correct_session(
     FocusSessionCorrection.objects.create(
         user=user, session=session, reason=reason.strip(), before=before, after=after
     )
+    # scheduling imports this module, so import it here, not at the top.
+    from scheduling import services as scheduling_services
+
+    scheduling_services.sync_entry_attribution(user=user, session=session)
     return session

@@ -4,6 +4,7 @@ from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
 from django.contrib.auth import authenticate, login, logout
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Sum
 from django.middleware.csrf import get_token
@@ -612,20 +613,47 @@ class SessionViewSet(OwnedViewSet):
 
     @action(detail=True, methods=["post"])
     def corrections(self, request, pk=None):
+        """Correct times and/or attribution of an ended session (audited)."""
         from rest_framework.fields import DateTimeField
 
-        field = DateTimeField()
+        data = request.data
+        times = {}
+        for name in ("started_at", "ended_at"):
+            if data.get(name):
+                try:
+                    times[name] = DateTimeField().to_internal_value(data[name])
+                except serializers.ValidationError as exc:
+                    raise serializers.ValidationError({name: exc.detail}) from exc
+        attribution = {}
+        for name, model in (
+            ("area", Area),
+            ("task", Task),
+            ("roadmap_item", RoadmapNode),
+        ):
+            if name not in data:
+                continue
+            if data[name] in (None, ""):
+                attribution[name] = None
+                continue
+            try:
+                attribution[name] = model.objects.get(pk=data[name], user=request.user)
+            except (model.DoesNotExist, ValueError, DjangoValidationError) as exc:
+                raise serializers.ValidationError(
+                    {name: ["Choose one of your own records."]}
+                ) from exc
+        if "is_deep_work" in data:
+            if not isinstance(data["is_deep_work"], bool):
+                raise serializers.ValidationError(
+                    {"is_deep_work": ["Send true or false."]}
+                )
+            attribution["is_deep_work"] = data["is_deep_work"]
         obj = correct_session(
             user=request.user,
-            session_id=pk,
-            reason=request.data.get("reason", ""),
-            started_at=field.to_internal_value(request.data["started_at"])
-            if request.data.get("started_at")
-            else None,
-            ended_at=field.to_internal_value(request.data["ended_at"])
-            if request.data.get("ended_at")
-            else None,
-            expected_version=request.data.get("expected_version"),
+            session_id=self.get_object().pk,
+            reason=str(data.get("reason", "") or ""),
+            expected_version=data.get("expected_version"),
+            **times,
+            **attribution,
         )
         return Response(self.get_serializer(obj).data)
 

@@ -83,8 +83,18 @@ class FocusSession(models.Model):
         from django.utils import timezone
 
         at = at or self.ended_at or timezone.now()
+        # Only the part of each pause inside [started_at, at] counts, so a
+        # corrected (narrower) window never subtracts pauses outside it.
         paused = sum(
-            int(((pause.ended_at or at) - pause.started_at).total_seconds())
+            max(
+                0,
+                int(
+                    (
+                        min(pause.ended_at or at, at)
+                        - max(pause.started_at, self.started_at)
+                    ).total_seconds()
+                ),
+            )
             for pause in self.pauses.all()
         )
         return max(0, int((at - self.started_at).total_seconds()) - paused)

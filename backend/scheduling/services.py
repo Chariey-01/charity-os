@@ -570,3 +570,31 @@ def sync_entry_from_session(*, user, session):
             entry.outcome = session.outcome
             fields.append("outcome")
     return _save(entry, *fields)
+
+
+@transaction.atomic
+def sync_entry_attribution(*, user, session):
+    """Give a linked entry its corrected session's category, task and roadmap
+    item (owner decision 4.5). Insights reads linked time through the entry,
+    so the two must never disagree. Closed entries included."""
+    entry = (
+        ScheduleEntry.objects.select_for_update()
+        .filter(user=user, focus_session_id=session.pk)
+        .first()
+    )
+    if entry is None:
+        return None
+    wanted = {
+        "area_id": session.area_id,
+        "area_label_snapshot": session.area_label_snapshot,
+        "task_id": session.task_id,
+        "roadmap_node_id": session.roadmap_item_id,
+    }
+    changed = [
+        field for field, value in wanted.items() if getattr(entry, field) != value
+    ]
+    if not changed:
+        return entry
+    for field in changed:
+        setattr(entry, field, wanted[field])
+    return _save(entry, *(field.removesuffix("_id") for field in changed))
