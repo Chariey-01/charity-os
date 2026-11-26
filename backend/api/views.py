@@ -33,6 +33,7 @@ from health.models import (
 )
 from planning.models import Area, DailyCapacity, DailyPlan, DailyPlanItem, Task
 from planning.services import (
+    add_node_to_today,
     add_plan_item,
     archive_task,
     carry_over,
@@ -355,6 +356,52 @@ class RoadmapNodeViewSet(ArchivableMixin, OwnedViewSet):
             return restore_node(user=user, node=instance)
         except ParentArchivedError as exc:
             raise ParentArchived() from exc
+
+    @action(detail=True, methods=["post"], url_path="add-to-today")
+    def add_to_today(self, request, pk=None):
+        """Plan this item for today (optionally starting focus) atomically."""
+        node = self.get_object()
+        local_date = timezone.localtime(
+            timezone.now(), ZoneInfo(request.user.timezone)
+        ).date()
+        focus = None
+        if request.data.get("start_focus"):
+            try:
+                session_id = uuid.UUID(str(request.data.get("session_id", "")))
+            except ValueError as exc:
+                raise serializers.ValidationError(
+                    {"session_id": ["Send a client-generated session id."]}
+                ) from exc
+            area_id = request.data.get("area") or node.roadmap.area_id
+            if not area_id:
+                raise serializers.ValidationError(
+                    {"area": ["Choose a category for the focus session."]}
+                )
+            try:
+                area = Area.objects.get(pk=area_id, user=request.user)
+            except (Area.DoesNotExist, ValueError, DjangoValidationError) as exc:
+                raise serializers.ValidationError(
+                    {"area": ["Choose one of your active categories."]}
+                ) from exc
+            focus = {"id": session_id, "area": area}
+        result = add_node_to_today(
+            user=request.user, node=node, local_date=local_date, focus=focus
+        )
+        context = {"request": request}
+        return Response(
+            {
+                "task": s.TaskSerializer(result["task"], context=context).data,
+                "plan_item": s.DailyPlanItemSerializer(
+                    result["item"], context=context
+                ).data,
+                "session": s.FocusSessionSerializer(
+                    result["session"], context=context
+                ).data
+                if result["session"]
+                else None,
+                "created_task": result["created_task"],
+            }
+        )
 
 
 # Prerequisite links are pure structure with no history of their own, so they

@@ -224,3 +224,77 @@ def remove_plan_item(*, user, item, reason=""):
         snapshot=snapshot,
     )
     return item
+
+
+@transaction.atomic
+def add_node_to_today(*, user, node, local_date, focus=None):
+    """Plan a roadmap item for a day in one transaction (Phase 0B, B4).
+
+    Reuses the item's open task (repeated taps used to create duplicates) and
+    creates one only when there is none. Puts it on the day's plan after the
+    last item, or carries it over if it is planned for another day. With
+    ``focus`` ({"id": uuid, "area": Area}) it also starts the focus session.
+    Any failure rolls back every write: no stray task, plan or plan item.
+    """
+    from execution.services import start_session
+    from roadmaps.models import RoadmapNode
+
+    node = (
+        RoadmapNode.objects.select_for_update(of=("self",))
+        .select_related("roadmap")
+        .get(pk=node.pk, user=user)
+    )
+    if node.archived_at is not None or node.roadmap.archived_at is not None:
+        raise ValidationError("This roadmap item is archived. Restore it first.")
+    plan, _ = DailyPlan.objects.get_or_create(
+        user=user, local_date=local_date, defaults={"timezone_name": user.timezone}
+    )
+    plan = DailyPlan.objects.select_for_update().get(pk=plan.pk)
+    task = (
+        Task.objects.filter(
+            user=user,
+            roadmap_item=node,
+            status__in=Task.OPEN_STATUSES,
+            archived_at__isnull=True,
+        )
+        .order_by("created_at")
+        .first()
+    )
+    created_task = task is None
+    if created_task:
+        task = Task.objects.create(
+            user=user, title=node.title, roadmap_item=node, is_deep_work_default=True
+        )
+    current = (
+        DailyPlanItem.objects.filter(task=task, state=DailyPlanItem.State.CURRENT)
+        .select_related("plan")
+        .first()
+    )
+    if current is not None and current.plan_id == plan.pk:
+        item = current
+    elif current is not None:
+        item = carry_over(user=user, item=current, destination_date=local_date)
+    else:
+        item = add_plan_item(
+            user=user, plan=plan, task=task, kind=DailyPlanItem.Kind.SECONDARY
+        )
+    session = None
+    if focus is not None:
+        area = focus["area"]
+        if area.user_id != user.id or area.archived_at is not None:
+            raise ValidationError({"area": "Choose one of your active categories."})
+        session = start_session(
+            user=user,
+            session_id=focus["id"],
+            area=area,
+            title=task.title,
+            is_deep_work=True,
+            task=task,
+            roadmap_item=node,
+        )
+    return {
+        "task": task,
+        "item": item,
+        "session": session,
+        "created_task": created_task,
+    }
