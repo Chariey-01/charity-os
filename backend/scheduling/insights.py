@@ -150,63 +150,19 @@ def build_insights(user, period="30d"):
             bucket[entry.status] += 1
 
     # --- Time by category (each minute once) ---------------------------------
-    categories = {}
-
-    def category(key, label, color):
-        if key not in categories:
-            categories[key] = {
-                "area": key if key and not key.startswith("label:") else None,
-                "label": label or "Uncategorised",
-                "color": color or "#64748B",
-                "planned_minutes": 0,
-                "actual_minutes": 0,
-                "activities": 0,
-            }
-        return categories[key]
-
-    done_entries = []
-    for entry in entries:
-        if entry.status in (Status.RESCHEDULED, Status.CANCELLED):
-            continue
-        key = (
-            str(entry.area_id)
-            if entry.area_id
-            else f"label:{entry.area_label_snapshot}"
-        )
-        row = category(
-            key,
-            entry.area.name if entry.area else entry.area_label_snapshot,
-            entry.area.color if entry.area else None,
-        )
-        row["planned_minutes"] += _minutes(entry.planned_seconds)
-        if entry.status in ScheduleEntry.DONE_STATUSES:
-            row["activities"] += 1
-            done_entries.append(entry)
-            actual = entry.actual_seconds()
-            if actual is not None:
-                row["actual_minutes"] += _minutes(actual)
-
-    lower, upper = local_bounds(start, end, zone)
-    sessions = list(
-        FocusSession.objects.filter(
-            user=user,
-            status=FocusSession.Status.COMPLETED,
-            started_at__gte=lower,
-            started_at__lt=upper,
-        ).select_related("area", "schedule_entry")
-    )
+    done_entries = [
+        entry
+        for entry in entries
+        if entry.status not in (Status.RESCHEDULED, Status.CANCELLED)
+        and entry.status in ScheduleEntry.DONE_STATUSES
+    ]
+    sessions = _completed_sessions(user, start, end, zone)
     focus_by_day = defaultdict(int)
     for session in sessions:
-        day = _local_day(session.started_at, zone)
-        focus_by_day[day] += session.duration_seconds or 0
-        linked = getattr(session, "schedule_entry", None)
-        if linked is None:
-            row = category(
-                str(session.area_id),
-                session.area_label_snapshot or session.area.name,
-                session.area.color,
-            )
-            row["actual_minutes"] += _minutes(session.duration_seconds)
+        focus_by_day[_local_day(session.started_at, zone)] += (
+            session.duration_seconds or 0
+        )
+    category_rows = _category_rows(entries, sessions)
 
     # --- Weekly rollups -------------------------------------------------------
     active_days = set()
@@ -253,7 +209,7 @@ def build_insights(user, period="30d"):
         "rescheduled": sum(row["rescheduled"] for row in by_day.values()),
         "cancelled": sum(row["cancelled"] for row in by_day.values()),
         "focus_minutes": _minutes(sum(focus_by_day.values())),
-        "tracked_minutes": sum(row["actual_minutes"] for row in categories.values()),
+        "tracked_minutes": sum(row["actual_minutes"] for row in category_rows),
         "active_days": len(active_days),
     }
 
@@ -263,20 +219,88 @@ def build_insights(user, period="30d"):
         "totals": totals,
         "schedule_daily": [{"date": day, **by_day[day]} for day in days],
         "schedule_weekly": sorted(weeks.values(), key=lambda week: week["week_start"]),
-        "category_time": sorted(
-            categories.values(),
-            key=lambda row: (
-                -row["actual_minutes"],
-                -row["planned_minutes"],
-                row["label"],
-            ),
-        ),
+        "category_time": category_rows,
         "focus_daily": [
             {"date": day, "minutes": _minutes(focus_by_day.get(day, 0))} for day in days
         ],
         "health": health,
         "challenge": challenge_progress(user, challenge, today, zone),
     }
+
+
+def _completed_sessions(user, start, end, zone):
+    lower, upper = local_bounds(start, end, zone)
+    return list(
+        FocusSession.objects.filter(
+            user=user,
+            status=FocusSession.Status.COMPLETED,
+            started_at__gte=lower,
+            started_at__lt=upper,
+        ).select_related("area", "schedule_entry")
+    )
+
+
+def _category_rows(entries, sessions):
+    """Planned and actual minutes per category, each minute counted once.
+
+    Actual time comes from completed schedule entries and from completed
+    focus sessions that are not linked to an entry (a linked session's time
+    is already the entry's). Rescheduled and cancelled entries are ignored.
+    """
+    categories = {}
+
+    def category(key, label, color):
+        if key not in categories:
+            categories[key] = {
+                "area": key if key and not key.startswith("label:") else None,
+                "label": label or "Uncategorised",
+                "color": color or "#64748B",
+                "planned_minutes": 0,
+                "actual_minutes": 0,
+                "activities": 0,
+            }
+        return categories[key]
+
+    for entry in entries:
+        if entry.status in (Status.RESCHEDULED, Status.CANCELLED):
+            continue
+        key = (
+            str(entry.area_id)
+            if entry.area_id
+            else f"label:{entry.area_label_snapshot}"
+        )
+        row = category(
+            key,
+            entry.area.name if entry.area else entry.area_label_snapshot,
+            entry.area.color if entry.area else None,
+        )
+        row["planned_minutes"] += _minutes(entry.planned_seconds)
+        if entry.status in ScheduleEntry.DONE_STATUSES:
+            row["activities"] += 1
+            actual = entry.actual_seconds()
+            if actual is not None:
+                row["actual_minutes"] += _minutes(actual)
+    for session in sessions:
+        if getattr(session, "schedule_entry", None) is None:
+            row = category(
+                str(session.area_id),
+                session.area_label_snapshot or session.area.name,
+                session.area.color,
+            )
+            row["actual_minutes"] += _minutes(session.duration_seconds)
+    return sorted(
+        categories.values(),
+        key=lambda row: (-row["actual_minutes"], -row["planned_minutes"], row["label"]),
+    )
+
+
+def category_time(user, start, end):
+    """``_category_rows`` for the user's local dates ``start``..``end``."""
+    zone = ZoneInfo(user.timezone)
+    entries = ScheduleEntry.objects.filter(
+        user=user, local_date__range=(start, end)
+    ).select_related("area", "focus_session")
+    return _category_rows(entries, _completed_sessions(user, start, end, zone))
 
 
 def _health(user, zone, start, end, days):
