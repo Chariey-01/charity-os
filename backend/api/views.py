@@ -59,7 +59,7 @@ from roadmaps.services import (
 from scheduling.services import sync_entry_from_session
 
 from . import serializers as s
-from .archive import ArchivableMixin, NoDeleteMixin, ParentArchived
+from .archive import ArchivableMixin, NoDeleteMixin, ParentArchived, UseStartAction
 
 EDIT_INSTEAD = (
     "edit_instead",
@@ -592,6 +592,11 @@ class SessionViewSet(OwnedViewSet):
     queryset = FocusSession.objects.select_related("schedule_entry")
     serializer_class = s.FocusSessionSerializer
     http_method_names = ["get", "post", "patch", "head", "options"]
+
+    def create(self, request, *args, **kwargs):
+        # A session's history begins only through /sessions/start, which sets
+        # the start time, snapshots and the one-open-session rule.
+        raise UseStartAction()
 
     def partial_update(self, request, pk=None):
         changes = {

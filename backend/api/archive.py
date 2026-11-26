@@ -29,6 +29,12 @@ class RestoreConflict(CodedAPIException):
     )
 
 
+class UseStartAction(CodedAPIException):
+    status_code = 405
+    default_code = "use_start"
+    default_detail = "Start a focus session with POST /api/v1/sessions/start."
+
+
 class ParentArchived(CodedAPIException):
     status_code = 409
     default_code = "parent_archived"

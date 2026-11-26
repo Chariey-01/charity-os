@@ -164,3 +164,21 @@ def test_two_concurrent_writers_with_the_same_version_one_wins(user, area, monke
     stored = FocusSession.objects.get(pk=session_id)
     assert stored.version == 2
     assert stored.notes in ("from phone", "from laptop")
+
+
+def test_sessions_can_only_begin_through_start(client, area):
+    raw = client.post(
+        "/api/v1/sessions",
+        {
+            "title": "raw",
+            "area": str(area.id),
+            "is_deep_work": True,
+            "status": "completed",
+        },
+        format="json",
+    )
+
+    assert raw.status_code == 405
+    assert raw.json()["error"]["code"] == "use_start"
+    assert not FocusSession.objects.exists()
+    assert start(client, area)["status"] == "active"
