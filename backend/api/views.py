@@ -21,6 +21,7 @@ from execution.services import (
     pause_session,
     resume_session,
     start_session,
+    update_session_details,
 )
 from health.models import (
     DailyNutritionRating,
@@ -500,6 +501,20 @@ class SessionViewSet(OwnedViewSet):
     queryset = FocusSession.objects.select_related("schedule_entry")
     serializer_class = s.FocusSessionSerializer
     http_method_names = ["get", "post", "patch", "head", "options"]
+
+    def partial_update(self, request, pk=None):
+        changes = {
+            key: value
+            for key, value in request.data.items()
+            if key != "expected_version"
+        }
+        session = update_session_details(
+            user=request.user,
+            session_id=self.get_object().pk,
+            expected_version=request.data.get("expected_version"),
+            changes=changes,
+        )
+        return Response(self.get_serializer(session).data)
 
     @action(detail=False, methods=["get"])
     def active(self, request):

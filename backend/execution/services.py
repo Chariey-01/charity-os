@@ -85,6 +85,70 @@ def _version(session, expected_version):
         raise SessionVersionConflict()
 
 
+class AttributionLocked(ValidationError):
+    """Answered as HTTP 400 with error.code "use_correction"."""
+
+    code_name = "use_correction"
+
+
+ATTRIBUTION_FIELDS = ("area", "task", "roadmap_item", "is_deep_work")
+EDITABLE_WHILE_OPEN = ("title", "notes", "outcome", "learning")
+EDITABLE_AFTER_END = ("notes", "outcome", "learning")
+
+
+@transaction.atomic
+def update_session_details(*, user, session_id, expected_version, changes):
+    """Edit a session's own words. Version-checked; attribution never changes here.
+
+    Open sessions may change title, notes, outcome and learning; ended ones
+    only notes, outcome and learning. Category, task, roadmap item and the
+    deep-work flag change only through correct_session, which is audited and
+    keeps the linked schedule entry in step.
+    """
+    session = _locked(user, session_id)
+    expected = parse_version(expected_version)
+    if expected is None:
+        raise ValidationError(
+            {"expected_version": "Send the session's current version to edit it."}
+        )
+    if session.version != expected:
+        raise SessionVersionConflict()
+    locked = [field for field in ATTRIBUTION_FIELDS if field in changes]
+    if locked:
+        raise AttributionLocked(
+            {
+                field: "Change this with POST /api/v1/sessions/<id>/corrections."
+                for field in locked
+            }
+        )
+    open_session = session.status in (
+        FocusSession.Status.ACTIVE,
+        FocusSession.Status.PAUSED,
+    )
+    allowed = EDITABLE_WHILE_OPEN if open_session else EDITABLE_AFTER_END
+    refused = sorted(set(changes) - set(allowed))
+    if refused:
+        reason = (
+            "Cannot be changed here."
+            if open_session
+            else "An ended session can only change notes, outcome and learning."
+        )
+        raise ValidationError({field: reason for field in refused})
+    for field, value in changes.items():
+        if not isinstance(value, str):
+            raise ValidationError({field: "Send text."})
+        if field == "title":
+            value = value.strip()
+            if not value or len(value) > 200:
+                raise ValidationError({"title": "Give the session a title (200 max)."})
+        setattr(session, field, value)
+    if not changes:
+        return session
+    session.version += 1
+    session.save(update_fields=(*changes, "version", "updated_at"))
+    return session
+
+
 @transaction.atomic
 def pause_session(*, user, session_id, pause_id, expected_version=None):
     session = _locked(user, session_id)
