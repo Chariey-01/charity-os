@@ -130,7 +130,14 @@ class OwnedViewSet(viewsets.ModelViewSet):
         return self.queryset.filter(user=self.request.user).order_by("-pk")
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        # A savepoint, so a constraint race (answered 409) leaves the
+        # connection usable.
+        with transaction.atomic():
+            serializer.save(user=self.request.user)
+
+    def perform_update(self, serializer):
+        with transaction.atomic():
+            serializer.save()
 
 
 def owned_viewset(name, model, serializer, *mixins):
@@ -381,11 +388,47 @@ ExerciseLogViewSet = owned_viewset(
 MealLogViewSet = owned_viewset(
     "MealLogViewSet", MealLog, s.MealLogSerializer, ArchivableMixin
 )
+
+
+class DailyTotalMixin:
+    """A daily total is the value for its day: saving it again updates it.
+
+    The app saves today's water and nutrition rating on every change, so a
+    second save is an update, not a duplicate (Phase 0B, B3).
+    """
+
+    def create(self, request, *args, **kwargs):
+        local_date = request.data.get("local_date")
+        with transaction.atomic():
+            existing = (
+                self.get_queryset()
+                .select_for_update()
+                .filter(local_date=local_date)
+                .first()
+                if local_date
+                else None
+            )
+            if existing is None:
+                return super().create(request, *args, **kwargs)
+            if existing.archived_at is not None:
+                raise serializers.ValidationError(
+                    {"local_date": ["This day's entry is archived. Restore it first."]}
+                )
+            serializer = self.get_serializer(existing, data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+        return Response(serializer.data)
+
+
 WaterViewSet = owned_viewset(
-    "WaterViewSet", DailyWaterTotal, s.WaterSerializer, ArchivableMixin
+    "WaterViewSet", DailyWaterTotal, s.WaterSerializer, DailyTotalMixin, ArchivableMixin
 )
 NutritionViewSet = owned_viewset(
-    "NutritionViewSet", DailyNutritionRating, s.NutritionSerializer, ArchivableMixin
+    "NutritionViewSet",
+    DailyNutritionRating,
+    s.NutritionSerializer,
+    DailyTotalMixin,
+    ArchivableMixin,
 )
 DailyReflectionViewSet = owned_viewset(
     "DailyReflectionViewSet",
@@ -479,7 +522,7 @@ class PlanItemViewSet(NoDeleteMixin, OwnedViewSet):
             plan=data["plan"],
             task=data["task"],
             kind=data.get("kind", "secondary"),
-            position=data.get("position", 0),
+            position=data.get("position"),
         )
 
     def create(self, request, *args, **kwargs):

@@ -2,6 +2,7 @@ from collections import Counter
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import IntegrityError
 from django.db.models import ProtectedError, RestrictedError
 from rest_framework.exceptions import APIException, MethodNotAllowed
 from rest_framework.response import Response
@@ -71,6 +72,23 @@ def exception_handler(exc, context):
             "This record still has history attached and cannot be deleted. "
             "Archive it instead.",
             blocking=_blocking(blocked),
+        )
+    # After Protected/RestrictedError, which are IntegrityError subclasses.
+    if isinstance(exc, IntegrityError):
+        # Validation runs every constraint first (OwnedModelSerializer); this is
+        # the backstop for two requests racing past it. Never a 500.
+        from .constraints import describe
+
+        cause = exc.__cause__
+        state = getattr(cause, "sqlstate", "") or ""
+        constraint = getattr(getattr(cause, "diag", None), "constraint_name", None)
+        field, message = describe(constraint)
+        conflict = state in ("23505", "23P01", "23503")  # unique, exclusion, FK
+        return _error(
+            409 if conflict else 400,
+            "conflict" if conflict else "invalid",
+            message,
+            fields={field: [message]},
         )
     if isinstance(exc, CodedAPIException):
         return _error(exc.status_code, exc.default_code, str(exc.detail))

@@ -2,6 +2,7 @@ from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from rest_framework import serializers
 
@@ -27,6 +28,16 @@ from roadmaps.models import (
 
 
 class OwnedModelSerializer(serializers.ModelSerializer):
+    # Fields a serializer or service sets after validation; constraints that
+    # read them are left to that later step (Task status, for example).
+    constraint_exclude = ()
+
+    def get_unique_together_validators(self):
+        # DRF's generic unique-together check would run first with a generic
+        # message and without the services' rules; _validate_constraints covers
+        # every constraint with the messages in api/constraints.py.
+        return []
+
     def get_fields(self):
         fields = super().get_fields()
         # Archiving goes through POST .../archive and .../restore (api/archive.py).
@@ -52,7 +63,50 @@ class OwnedModelSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     "Related objects must belong to the current user."
                 )
+        self._validate_constraints(attrs, user)
         return attrs
+
+    def _candidate(self, attrs, user):
+        """An unsaved model instance as it would be stored, for validation only."""
+        model = self.Meta.model
+        if self.instance is not None:
+            candidate = model(
+                **{
+                    field.attname: getattr(self.instance, field.attname)
+                    for field in model._meta.concrete_fields
+                }
+            )
+            candidate._state.adding = False
+            candidate._state.db = self.instance._state.db
+        else:
+            candidate = model()
+            if any(field.name == "user" for field in model._meta.concrete_fields):
+                candidate.user = user
+        many_to_many = {field.name for field in model._meta.many_to_many}
+        for field, value in attrs.items():
+            if field not in many_to_many:
+                setattr(candidate, field, value)
+        return candidate
+
+    def _validate_constraints(self, attrs, user):
+        """Run every database constraint (unique, conditional, expression,
+        check, exclusion) before saving, so duplicates and invalid combinations
+        are field errors instead of an IntegrityError and HTTP 500 (B3)."""
+        from .constraints import describe
+
+        model = self.Meta.model
+        candidate = self._candidate(attrs, user)
+        errors = {}
+        for constraint in model._meta.constraints:
+            try:
+                constraint.validate(
+                    model, candidate, exclude=set(self.constraint_exclude)
+                )
+            except DjangoValidationError:
+                field, message = describe(constraint.name)
+                errors.setdefault(field, []).append(message)
+        if errors:
+            raise serializers.ValidationError(errors)
 
     def create(self, validated_data):
         return super().create({**validated_data, "user": self.context["request"].user})
@@ -81,6 +135,11 @@ class DailyPlanItemSerializer(
     """``state`` changes only through actions that write planning history
     (carry-over, remove), never through a plain write."""
 
+    # add_plan_item appends when no position is sent and checks a sent one.
+    # No default: DRF would otherwise copy the model default 0 into every create.
+    position = serializers.IntegerField(required=False, min_value=0)
+    constraint_exclude = ("position",)
+
     def to_internal_value(self, data):
         if "state" in data:
             raise serializers.ValidationError(
@@ -104,6 +163,8 @@ class TaskSerializer(OwnedModelSerializer):
 
     status = serializers.CharField(required=False)
     legacy_status = serializers.SerializerMethodField()
+    # transition_task sets these after validation and enforces their rules.
+    constraint_exclude = ("status", "completed_at", "cancelled_at")
 
     class Meta:
         model = Task

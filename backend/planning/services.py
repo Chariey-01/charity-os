@@ -1,16 +1,37 @@
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Max
 from django.utils import timezone
 
 from .models import DailyPlan, DailyPlanItem, PlanningEvent, Task
 
 
+def next_position(plan):
+    """One past the plan's last current item, so appends never collide."""
+    last = plan.items.filter(state=DailyPlanItem.State.CURRENT).aggregate(
+        last=Max("position")
+    )["last"]
+    return 0 if last is None else last + 1
+
+
 @transaction.atomic
-def add_plan_item(*, user, plan, task, kind, position):
+def add_plan_item(*, user, plan, task, kind, position=None):
     plan = DailyPlan.objects.select_for_update().get(pk=plan.pk, user=user)
     task = Task.objects.select_for_update().get(pk=task.pk, user=user)
     if task.status not in Task.OPEN_STATUSES:
         raise ValidationError("Only open tasks can be added to a plan.")
+    if DailyPlanItem.objects.filter(
+        task=task, state=DailyPlanItem.State.CURRENT
+    ).exists():
+        raise ValidationError(
+            {"task": "This task is already on a plan. Carry it over instead."}
+        )
+    if position is None:
+        position = next_position(plan)
+    elif plan.items.filter(
+        state=DailyPlanItem.State.CURRENT, position=position
+    ).exists():
+        raise ValidationError({"position": "Another item already holds this position."})
     if (
         kind == DailyPlanItem.Kind.PRIMARY
         and plan.items.filter(kind=kind, state=DailyPlanItem.State.CURRENT).count() >= 3
@@ -62,7 +83,7 @@ def carry_over(*, user, item, destination_date):
         defaults={"timezone_name": item.plan.timezone_name},
     )
     destination = DailyPlan.objects.select_for_update().get(pk=destination.pk)
-    position = destination.items.filter(state=DailyPlanItem.State.CURRENT).count()
+    position = next_position(destination)
     item.state = DailyPlanItem.State.CARRIED_FORWARD
     item.save(update_fields=("state", "updated_at"))
     new_item = DailyPlanItem.objects.create(
