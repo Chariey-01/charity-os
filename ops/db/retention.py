@@ -6,6 +6,7 @@ A backup directory is named ``YYYYmmddTHHMMSSZ_<label>`` (UTC). Kept:
 * the newest backup of each of the 14 most recent days that have a backup;
 * the newest backup of each of the 8 most recent ISO weeks that have a backup;
 * every ``pre-migrate`` backup younger than 30 days;
+* every ``drill`` backup: a restore-drill report names it as its evidence;
 * anything dated in the future (a wrong clock is not a reason to delete).
 
 Directories whose names do not match the pattern are never deleted. The
@@ -60,7 +61,7 @@ def plan_deletions(names, now):
     keep.update(newest_per_day[day] for day in sorted(newest_per_day)[-DAILY:])
     keep.update(newest_per_week[week] for week in sorted(newest_per_week)[-WEEKLY:])
     for backup in backups:
-        if backup.taken_at > now:
+        if backup.taken_at > now or backup.label == "drill":
             keep.add(backup.name)
         elif backup.label == "pre-migrate" and now - backup.taken_at <= timedelta(
             days=PRE_MIGRATE_DAYS

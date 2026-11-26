@@ -108,3 +108,24 @@ Covered permanently by `test_archived_at_cannot_be_written_directly` and `test_a
   - the unbounded metrics range;
   - evidence URL validation on PATCH;
   - reflection duplicate handling and revision protection.
+
+## Addendum: independent verification and two follow-up fixes (26 Nov, after sign-off)
+
+**Independent verification.** Session `progress-tracker-ae` re-verified Gate 0A from its own export of `742fa6d`, without using this worktree. It reproduced:
+- 312 backend tests passing, in its own `test_charityos_9ea67f29fe`, with the 13 gate files collecting 135 tests;
+- clean ruff, `makemigrations`, `check` and `check --deploy`;
+- the frontend: 52/52 tests, lint, typecheck and build;
+- a restore of `20261126T074605Z_drill`, with checksums, rows, fingerprints, schema, migrations and `manage.py check` all OK;
+- the migration round trip on its copy (forward 13, back with every row identical, forward again);
+- `charityos` unchanged.
+
+It raised four findings:
+
+1. **An evidence backup was pruned.** The backup cited in section 5, `20261126T074526Z_drill`, was deleted 38 seconds later by retention during the next drill, because retention kept only the newest backup per day. Its drill report still exists. **Fixed:** retention never deletes `drill` backups, and `restore-drill.sh` passes `--no-prune`. Tested and mutation-checked. The surviving `20261126T074605Z_drill` is what the independent restore used.
+2. **The test-database guard protected only `test_charityos`.** `CHARITYOS_TEST_DB=test_charityos_p2` would have let pytest-django drop that protected database. **Fixed:** overrides may not use the reserved `test_charityos*` prefix. Tested with `test_charityos_p2` and another checkout's automatic name.
+3. **The "off-machine" package is still on the same disk** as the repository and backups. Correct: moving it needs a medium only the owner has. This is still an open action for the owner.
+4. **It questioned starting 0B.** The owner approved Phase 0B directly to session b0 on 26 Nov, so no change is needed.
+
+**Left for the owner.** `progress-tracker-ae`'s own restore database, `charityos_restore_drill_ae_20261126t075039z`, still exists: the safety check blocked its drop. It was not created by this branch's drill, so it is not dropped here.
+
+**Final Gate 0A code** is the follow-up commit that carries this addendum. Phase 0B merges it in.
