@@ -16,7 +16,7 @@ from health.models import (
     SleepLog,
 )
 from planning.models import Area, DailyCapacity, DailyPlan, DailyPlanItem, Task
-from planning.services import transition_task
+from planning.services import record_due_change, transition_task
 from records.models import Accomplishment, Evidence
 from reflections.models import DailyReflection, WeeklyReview
 from roadmaps.models import (
@@ -196,7 +196,11 @@ class TaskSerializer(OwnedModelSerializer):
     @transaction.atomic
     def update(self, instance, validated_data):
         status = validated_data.pop("status", None)
+        previous_due = instance.due_date
         task = super().update(instance, validated_data)
+        record_due_change(
+            user=self.context["request"].user, task=task, previous=previous_due
+        )
         if status is not None and status != task.status:
             task = transition_task(
                 user=self.context["request"].user, task=task, target=status

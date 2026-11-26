@@ -233,10 +233,39 @@ def owned_counts(user, registry=current_apps):
     }
 
 
-def table_rows(registry=current_apps):
-    """Every column of every row in every owned table (plus users)."""
+def table_rows(registry=current_apps, columns_from=None):
+    """Every column of every row in every owned table (plus users).
+
+    ``columns_from`` (an older registry) limits each table to the columns it
+    had then, so old-shape data can be compared after later migrations have
+    added columns; ``added_columns`` checks what those new columns hold.
+    """
+    shapes = (
+        dict(_models(columns_from, ("users.User", *OWNED_MODELS)))
+        if columns_from
+        else {}
+    )
     snapshot = {}
     for name, model in _models(registry, ("users.User", *OWNED_MODELS)):
-        columns = [field.attname for field in model._meta.concrete_fields]
+        shape = shapes.get(name, model)
+        columns = [field.attname for field in shape._meta.concrete_fields]
         snapshot[name] = list(model.objects.order_by("pk").values_list(*columns))
     return snapshot
+
+
+def added_columns(registry, columns_from):
+    """Values of the columns ``registry`` has and ``columns_from`` lacked."""
+    shapes = dict(_models(columns_from, ("users.User", *OWNED_MODELS)))
+    added = {}
+    for name, model in _models(registry, ("users.User", *OWNED_MODELS)):
+        if name not in shapes:  # a whole new table is not "added columns"
+            continue
+        old = {field.attname for field in shapes[name]._meta.concrete_fields}
+        new = [
+            field.attname
+            for field in model._meta.concrete_fields
+            if field.attname not in old
+        ]
+        if new:
+            added[name] = set(model.objects.values_list(*new))
+    return added

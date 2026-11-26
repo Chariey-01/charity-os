@@ -510,6 +510,42 @@ class TaskViewSet(ArchivableMixin, OwnedViewSet):
     queryset = Task.objects.all()
     serializer_class = s.TaskSerializer
 
+    def get_queryset(self):
+        """List filters: ``status`` (``open`` or names, comma-separated),
+        ``area`` and ``completed_since`` (a local date; tasks that are not
+        done always pass). Detail routes are never filtered."""
+        queryset = super().get_queryset()
+        if self.action != "list":
+            return queryset
+        params = self.request.query_params
+        if params.get("status"):
+            wanted = set()
+            for name in params["status"].split(","):
+                name = name.strip()
+                if name == "open":
+                    wanted.update(Task.OPEN_STATUSES)
+                elif name in Task.Status.values:
+                    wanted.add(name)
+                else:
+                    raise serializers.ValidationError(
+                        {"status": [f"Unknown task status: {name}."]}
+                    )
+            queryset = queryset.filter(status__in=wanted)
+        if params.get("area"):
+            queryset = queryset.filter(area_id=params["area"])
+        if params.get("completed_since"):
+            try:
+                since = date.fromisoformat(params["completed_since"])
+            except ValueError as exc:
+                raise serializers.ValidationError(
+                    {"completed_since": ["Use a date like 2026-11-24."]}
+                ) from exc
+            start = datetime.combine(
+                since, time.min, ZoneInfo(self.request.user.timezone)
+            )
+            queryset = queryset.exclude(status=Task.Status.DONE, completed_at__lt=start)
+        return queryset
+
     def archive_service(self, user, instance):
         return archive_task(user=user, task=instance)
 

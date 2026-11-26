@@ -197,6 +197,10 @@ class Task(models.Model):
     )
     priority = models.PositiveSmallIntegerField(default=0)
     estimated_minutes = models.PositiveIntegerField(null=True, blank=True)
+    # Optional. Changes are recorded as due_changed PlanningEvents so a past
+    # week's workload can be reconstructed (planning/progress.py). Same field
+    # definition as the parked project-domain branch's planning.0009.
+    due_date = models.DateField(null=True, blank=True)
     task_type = models.CharField(max_length=40, blank=True, default="")
     is_deep_work_default = models.BooleanField(default=False)
     status = models.CharField(
@@ -317,6 +321,7 @@ class PlanningEvent(models.Model):
         STATUS_CHANGED = "status_changed", "Status changed"
         ARCHIVED = "archived", "Archived"
         RESTORED = "restored", "Restored"
+        DUE_CHANGED = "due_changed", "Due date changed"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
