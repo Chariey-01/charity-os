@@ -144,3 +144,20 @@ def test_every_period_the_insights_screen_sends_is_accepted(client):
         sent = "year" if period == "all" else period
         response = metrics(client, f"?period={sent}")
         assert response.status_code == 200, period
+
+
+@pytest.mark.parametrize(
+    "query, field",
+    [
+        ("?period=7d&start=2026-01-01", "start"),
+        ("?period=30d&start=2026-11-01", "start"),
+        ("?period=decade&start=2026-11-01", "start"),
+        ("?period=year&end=2026-12-31", "end"),
+    ],
+)
+def test_a_period_with_its_own_dates_is_refused(client, query, field):
+    """Review of Phase 0C: the dates were silently ignored (or the period was)."""
+    response = metrics(client, query)
+
+    assert response.status_code == 400
+    assert field in response.json()

@@ -781,6 +781,12 @@ def metrics(request):
     tz = ZoneInfo(request.user.timezone)
     today = timezone.localtime(timezone.now(), tz).date()
     period = request.query_params.get("period", "30d")
+    dates = [name for name in ("start", "end") if request.query_params.get(name)]
+    if "period" in request.query_params and dates:
+        # One or the other: a period sets its own dates.
+        raise serializers.ValidationError(
+            {dates[0]: ["Send either a period or start/end dates, not both."]}
+        )
     if not request.query_params.get("start") and period not in METRICS_PERIODS:
         raise serializers.ValidationError(
             {"period": [f"Use one of: {', '.join(METRICS_PERIODS)}."]}
