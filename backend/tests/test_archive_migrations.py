@@ -55,10 +55,12 @@ def rows(apps):
     for app, names in MODELS.items():
         for name in names:
             model = apps.get_model(app, name)
+            # Only the columns every compared state has: archived_at arrives in
+            # 0002 and version in reflections.0003.
             columns = [
                 field.attname
                 for field in model._meta.concrete_fields
-                if field.name != "archived_at"
+                if field.name not in ("archived_at", "version")
             ]
             snapshot[name] = list(model.objects.order_by("pk").values_list(*columns))
     return snapshot
@@ -246,6 +248,14 @@ def test_reverse_is_refused_while_archived_rows_exist(app, model):
             apply([(app, "0001_initial")])
 
         assert "0002_archived_at" in applied(app)
-        assert apps.get_model(app, model).objects.get(pk=row.pk).archived_at == T0
+        # Later migrations of the app may have been reversed before the guard
+        # refused, so read only the column under test.
+        stored = (
+            apps.get_model(app, model)
+            .objects.filter(pk=row.pk)
+            .values_list("archived_at", flat=True)
+            .get()
+        )
+        assert stored == T0
     finally:
         all_forward()

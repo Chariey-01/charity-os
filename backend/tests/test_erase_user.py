@@ -72,10 +72,11 @@ def test_confirmed_erasure_removes_everything_of_one_user_only(
     keep, gone, _ = people
     kept_before = rows_of(keep.pk)
     gone_id = gone.pk
+    total = sum(owned_counts(gone).values()) + 1  # their rows plus the account
 
     output = erase("gone@example.com", "--confirm", "GONE@example.com")
 
-    assert "Erased gone@example.com: 32 rows." in output  # stored lowercased
+    assert f"Erased gone@example.com: {total} rows." in output  # stored lowercased
     assert not django_user_model.objects.filter(pk=gone_id).exists()
     assert set(owned_counts(gone_id).values()) == {0}
     assert rows_of(keep.pk) == kept_before

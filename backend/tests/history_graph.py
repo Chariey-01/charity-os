@@ -33,6 +33,7 @@ OWNED_MODELS = (
     "records.Evidence",
     "reflections.DailyReflection",
     "reflections.WeeklyReview",
+    "reflections.ReflectionRevision",
     "health.SleepLog",
     "health.ExerciseLog",
     "health.MealLog",
@@ -184,9 +185,20 @@ def build_history(user, registry=current_apps, label="a"):
     model("health.DailyNutritionRating").objects.create(
         user=user, local_date=DAY, timezone_name="UTC", rating=4
     )
-    model("reflections.DailyReflection").objects.create(
+    reflection = model("reflections.DailyReflection").objects.create(
         user=user, local_date=DAY, timezone_name="UTC", went_well="Focus"
     )
+    try:  # absent in migration states before reflections.0003
+        Revision = model("reflections.ReflectionRevision")
+    except LookupError:
+        Revision = None
+    if Revision is not None:
+        Revision.objects.create(
+            user=user,
+            daily_reflection=reflection,
+            version=1,
+            content={"went_well": "First words"},
+        )
     model("reflections.WeeklyReview").objects.create(
         user=user,
         week_start_date=date(2026, 11, 16),
@@ -206,18 +218,25 @@ def build_history(user, registry=current_apps, label="a"):
     }
 
 
+def _models(registry, names):
+    for name in names:
+        try:
+            yield name, registry.get_model(name)
+        except LookupError:  # not yet created in this migration state
+            continue
+
+
 def owned_counts(user, registry=current_apps):
     return {
-        name: registry.get_model(name).objects.filter(user=user).count()
-        for name in OWNED_MODELS
+        name: model.objects.filter(user=user).count()
+        for name, model in _models(registry, OWNED_MODELS)
     }
 
 
 def table_rows(registry=current_apps):
     """Every column of every row in every owned table (plus users)."""
     snapshot = {}
-    for name in ("users.User", *OWNED_MODELS):
-        model = registry.get_model(name)
+    for name, model in _models(registry, ("users.User", *OWNED_MODELS)):
         columns = [field.attname for field in model._meta.concrete_fields]
         snapshot[name] = list(model.objects.order_by("pk").values_list(*columns))
     return snapshot

@@ -22,6 +22,7 @@ class DailyReflection(models.Model):
     mood = models.PositiveSmallIntegerField(null=True, blank=True)
     closed_at = models.DateTimeField(null=True, blank=True)
     archived_at = models.DateTimeField(null=True, blank=True)
+    version = models.PositiveIntegerField(default=1)
 
     class Meta:
         constraints = [
@@ -46,6 +47,7 @@ class WeeklyReview(models.Model):
     next_week = models.TextField(blank=True, default="")
     closed_at = models.DateTimeField(null=True, blank=True)
     archived_at = models.DateTimeField(null=True, blank=True)
+    version = models.PositiveIntegerField(default=1)
 
     class Meta:
         constraints = [
@@ -63,3 +65,56 @@ class WeeklyReview(models.Model):
             and self.week_end_date != self.week_start_date + timedelta(days=6)
         ):
             raise ValidationError({"week_end_date": "Week must end on Sunday."})
+
+
+class ReflectionRevision(models.Model):
+    """The words a daily reflection or weekly review had before an edit.
+
+    Written by reflections.services.revise just before it changes the record,
+    so no wording is ever silently overwritten (Phase 0C, S8).
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="reflection_revisions",
+    )
+    daily_reflection = models.ForeignKey(
+        DailyReflection,
+        null=True,
+        blank=True,
+        on_delete=models.RESTRICT,
+        related_name="revisions",
+    )
+    weekly_review = models.ForeignKey(
+        WeeklyReview,
+        null=True,
+        blank=True,
+        on_delete=models.RESTRICT,
+        related_name="revisions",
+    )
+    version = models.PositiveIntegerField()  # the version this content had
+    content = models.JSONField()
+    created_at = models.DateTimeField(auto_now_add=True)  # when it was replaced
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(
+                    daily_reflection__isnull=False, weekly_review__isnull=True
+                )
+                | models.Q(daily_reflection__isnull=True, weekly_review__isnull=False),
+                name="reflections_revision_one_parent",
+            ),
+            models.UniqueConstraint(
+                fields=("daily_reflection", "version"),
+                condition=models.Q(daily_reflection__isnull=False),
+                name="reflections_revision_daily_version_unique",
+            ),
+            models.UniqueConstraint(
+                fields=("weekly_review", "version"),
+                condition=models.Q(weekly_review__isnull=False),
+                name="reflections_revision_weekly_version_unique",
+            ),
+        ]

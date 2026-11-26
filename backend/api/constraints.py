@@ -122,6 +122,18 @@ MESSAGES = {
         "week_start_date",
         "You already reviewed this week.",
     ),
+    "reflections_revision_one_parent": (
+        NON_FIELD,
+        "A revision belongs to exactly one reflection or weekly review.",
+    ),
+    "reflections_revision_daily_version_unique": (
+        "version",
+        "This version is already recorded.",
+    ),
+    "reflections_revision_weekly_version_unique": (
+        "version",
+        "This version is already recorded.",
+    ),
     "execution_one_open_session_per_user": (
         NON_FIELD,
         "Finish or pause your current focus session first.",
