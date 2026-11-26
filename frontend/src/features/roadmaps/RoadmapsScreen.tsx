@@ -3,7 +3,7 @@ import { ReactNode, useEffect, useState } from "react";
 import { useApp } from "../../app/context";
 import { EmptyState, ErrorState, Icon, Loading } from "../../components/ui";
 import { api, newId, patch, post } from "../../lib/api";
-import type { Roadmap, RoadmapNode, Task } from "../../lib/types";
+import type { Roadmap, RoadmapNode } from "../../lib/types";
 
 type NextAction = { roadmap_id: string; roadmap_title: string; node_id: string; title: string; reason: string };
 
@@ -38,18 +38,18 @@ export function RoadmapsScreen() {
     }
   }
 
+  // One request, one server transaction: the task, today's plan item and (for
+  // Start focus) the session are all created, or none of them is.
   async function addToToday(node: RoadmapNode, focus = false) {
     try {
-      const task = await post<Task>("/tasks", { title: node.title, roadmap_item: node.id, is_deep_work_default: true });
-      const today = await api<{ plan: { id: string } }>("/daily-plans/today");
-      await post("/daily-plan-items", { plan: today.plan.id, task: task.id, kind: "secondary", position: 99 });
-      setMessage("Added to Today's unscheduled tasks");
+      const body: Record<string, unknown> = {};
       if (focus) {
-        const area = app.areas[0]?.id;
+        const area = selected?.roadmap.area ?? app.areas[0]?.id;
         if (!area) throw new Error("Create a category before starting focus.");
-        await post("/sessions/start", { id: newId(), title: task.title, area, task: task.id, roadmap_item: node.id, is_deep_work: true });
-        setMessage("Focus started");
+        Object.assign(body, { start_focus: true, session_id: newId(), area });
       }
+      await post(`/roadmap-nodes/${node.id}/add-to-today`, body);
+      setMessage(focus ? "Focus started" : "Added to Today's unscheduled tasks");
       app.refresh();
     } catch (err) {
       app.toast(err instanceof Error ? err.message : "Could not add", "error");

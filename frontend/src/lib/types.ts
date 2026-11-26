@@ -226,7 +226,7 @@ export type Insights = {
   week: WeekSummary;
 };
 
-export type Roadmap = { id: string; title: string; description: string; status: string };
+export type Roadmap = { id: string; title: string; description: string; status: string; area?: string | null };
 
 export type RoadmapNode = {
   id: string;
