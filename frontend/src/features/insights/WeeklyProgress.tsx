@@ -116,7 +116,7 @@ export function WeeklyProgress({ week, onWeek }: { week: string | null; onWeek: 
       />
       <DonutChart
         title="Tracked time by workstream"
-        unit="min"
+        unit="tracked"
         format={formatMinutes}
         rows={workstreams.time.map((row) => ({ key: row.area ?? row.label, label: row.label, color: row.color, value: row.actual_minutes }))}
         empty="No focus sessions or completed activities with tracked time this week."
@@ -148,11 +148,11 @@ export function WeeklyProgress({ week, onWeek }: { week: string | null; onWeek: 
         ) : (
           <>
             <ul className="facts">
-              <li><b>{done.completed_tasks.length}</b> tasks completed</li>
-              <li><b>{done.milestones.length}</b> roadmap milestones reached</li>
-              <li><b>{formatMinutes(done.focus_minutes)}</b> focus time ({done.focus_sessions} sessions)</li>
-              <li><b>{done.learning.roadmap_items_completed}</b> learning items completed · <b>{done.learning.roadmap_tasks_completed}</b> roadmap-linked tasks done</li>
-              <li><b>{done.evidence_recorded}</b> pieces of evidence · <b>{done.accomplishments.length}</b> achievements recorded</li>
+              <li><b>{done.completed_tasks.length}</b> {plural(done.completed_tasks.length, "task")} completed</li>
+              <li><b>{done.milestones.length}</b> roadmap {plural(done.milestones.length, "milestone")} reached</li>
+              <li><b>{formatMinutes(done.focus_minutes)}</b> focus time ({done.focus_sessions} {plural(done.focus_sessions, "session")})</li>
+              <li><b>{done.learning.roadmap_items_completed}</b> learning {plural(done.learning.roadmap_items_completed, "item")} completed · <b>{done.learning.roadmap_tasks_completed}</b> roadmap-linked {plural(done.learning.roadmap_tasks_completed, "task")} done</li>
+              <li><b>{done.evidence_recorded}</b> {plural(done.evidence_recorded, "piece")} of evidence · <b>{done.accomplishments.length}</b> {plural(done.accomplishments.length, "achievement")} recorded</li>
             </ul>
             {done.roadmaps_advanced.length > 0 && <p className="hint">Roadmaps advanced: {done.roadmaps_advanced.join(", ")}</p>}
             {done.completed_tasks.length > 0 && (
@@ -197,6 +197,10 @@ export function WeeklyProgress({ week, onWeek }: { week: string | null; onWeek: 
       </button>
     </div>
   );
+}
+
+function plural(count: number, word: string) {
+  return count === 1 ? word : `${word}s`;
 }
 
 function Stat({ label, value, detail, tone }: { label: string; value: string; detail: string; tone?: "warn" }) {
