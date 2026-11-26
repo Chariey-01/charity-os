@@ -32,21 +32,28 @@ def test_migrations_never_run_when_the_backup_fails(tmp_path):
     assert not marker.exists()
 
 
-def test_the_database_defaults_to_postgres_db(tmp_path):
+def test_the_database_must_be_named_explicitly(tmp_path):
+    """No default target: POSTGRES_DB (here, or the personal database named
+    in .env) is never migrated by a bare run."""
+    marker = tmp_path / "python-ran"
+    fake_python = tmp_path / "python"
+    fake_python.write_text(f"#!/bin/sh\ntouch {marker}\n")
+    fake_python.chmod(0o755)
+
     result = run(
         "migrate-with-backup.sh",
         "--root",
-        str(tmp_path),
+        str(tmp_path / "backups"),
         env={
             "POSTGRES_DB": "charityos_default_probe",
-            "PGHOST": str(tmp_path / "no-server"),
-            "PGPORT": "1",
+            "CHARITYOS_PYTHON": str(fake_python),
         },
     )
 
-    assert result.returncode != 0
-    assert "backup of charityos_default_probe" in result.stderr
-    assert "NOT migrating charityos_default_probe" in result.stderr
+    assert result.returncode == 2
+    assert "name the database to migrate with --database" in result.stderr
+    assert not (tmp_path / "backups").exists()
+    assert not marker.exists()
 
 
 @pytest.mark.django_db(transaction=True)

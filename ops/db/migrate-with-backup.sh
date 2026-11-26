@@ -1,19 +1,23 @@
 #!/usr/bin/env bash
 # Run Django migrations only after a verified backup of the same database.
 #
-#   ops/db/migrate-with-backup.sh [--database NAME] [--root DIR] [-- extra migrate arguments]
+#   ops/db/migrate-with-backup.sh --database NAME [--root DIR] [-- extra migrate arguments]
 #
-# The database defaults to POSTGRES_DB (environment or the checkout's .env).
+# The database must be named. There is deliberately no default, so a bare run can
+# never migrate whatever database POSTGRES_DB or .env happens to point at.
 # 1. backup.sh takes a verified backup labelled "pre-migrate" (retention keeps these
 #    for 30 days). If the backup fails for any reason, nothing is migrated.
-# 2. `manage.py migrate --noinput` runs against that database with any extra arguments.
+# 2. The database Django would migrate is identified through Django and through libpq
+#    (name, database OID, server start time). Unless both are the database just
+#    backed up, nothing is migrated.
+# 3. `manage.py migrate --noinput` runs against that database with any extra arguments.
 # The backup path is printed so a failed migration can be investigated or the
 # database restored into a new one with restore.sh.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 usage() {
-  sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
   exit "${1:-2}"
 }
 
@@ -28,9 +32,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+[[ -n "$DATABASE" ]] ||
+  refuse "name the database to migrate with --database; POSTGRES_DB is never used as a default"
 load_connection_env
-DATABASE="${DATABASE:-${POSTGRES_DB:-}}"
-[[ -n "$DATABASE" ]] || refuse "no database given and POSTGRES_DB is not set"
 valid_database_name "$DATABASE" || refuse "'$DATABASE' is not a valid database name"
 
 log "step 1/2: verified backup of $DATABASE before migrating"

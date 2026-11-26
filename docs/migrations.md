@@ -3,7 +3,7 @@
 Every migration that changes data or constraints, in apply order, with its dependencies and rollback notes. In any environment that holds real records, migrate only through the wrapper. It takes a verified `pre-migrate` backup and refuses to migrate if that backup fails ([backup and restore](operations/backup-and-restore.md)):
 
 ```bash
-ops/db/migrate-with-backup.sh            # database from POSTGRES_DB
+ops/db/migrate-with-backup.sh --database NAME   # the target is always named explicitly
 ```
 
 ## Mobile scheduler (merged into `main` at `4ad209d`)
@@ -42,7 +42,7 @@ Application compatibility: the bundled client accepts both status vocabularies (
 
 ## Phase 0A data safety (branch `feature/data-safety`, based on `1ceba99`)
 
-Apply these with `ops/db/migrate-with-backup.sh`.
+Apply these with `ops/db/migrate-with-backup.sh --database NAME`.
 
 | Migration | Depends on | Effect | Reversible | Rollback notes |
 |---|---|---|---|---|

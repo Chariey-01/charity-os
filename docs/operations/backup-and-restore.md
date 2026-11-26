@@ -43,11 +43,17 @@ Only folders whose manifest names the same database are ever deleted. Use `--no-
 ## Before every migration
 
 ```bash
-ops/db/migrate-with-backup.sh                 # POSTGRES_DB from .env
+ops/db/migrate-with-backup.sh --database NAME
 ops/db/migrate-with-backup.sh --database NAME -- planning 0008   # extra migrate args
 ```
 
-The wrapper takes a `pre-migrate` backup and runs `manage.py migrate` only if that backup verified. It prints the backup path. **Use it instead of a bare `migrate` on any database that holds real records.**
+The wrapper never migrates by default; the target is always named. It:
+
+1. Takes a verified `pre-migrate` backup of that database.
+2. Confirms that Django would migrate the very database just backed up. The database name, its OID and the server's start time must match through both Django and libpq.
+3. Only then runs `manage.py migrate`.
+
+If any step fails, nothing is migrated, and the backup path is printed. The `PG*` server settings are also handed to Django, so the two can't drift apart. While `DATABASE_URL` is set, every `ops/db` script refuses to run. **Use the wrapper instead of a bare `migrate` on any database that holds real records.**
 
 ## Restoring
 
