@@ -76,3 +76,7 @@ That branch, built on the same base, adds `planning.0009_task_project_fields`, `
    - §15 freezes an entry's `task` once a session is linked; decision 4.5 makes the audited correction the one exception.
 4. **Before merging,** run the forward and reverse migration tests and `erase_user` against the joined graph.
 
+## Phase 0B data integrity (branch `feature/data-integrity`)
+
+**No migrations.** Phase 0B changes validation, services and the API only, so the schema is the Gate 0A schema. The restore drill (`--migrate`) still runs all 13 pending migrations forward, back and forward again on a copy of `charityos_acceptance`. `manage.py check_data_integrity` passes on the migrated copy.
+

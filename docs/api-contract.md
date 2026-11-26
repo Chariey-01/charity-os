@@ -187,3 +187,58 @@ For a refused DELETE, the `Allow` header leaves out `DELETE`.
 - It refuses, or rolls back, if anything outside the account would change, or if what it removes differs from the plan it showed.
 - Django admin cannot delete records.
 
+
+## Data integrity (implemented, Phase 0B)
+
+**Roadmap trees.** Creating or moving a node validates its parent under the roadmap's row lock. Each of these answers 400 with `error.fields.parent`:
+- a parent in another roadmap;
+- the node itself or one of its descendants;
+- an archived parent;
+- a node that is part of a cycle left in old data.
+
+A node's `roadmap` cannot change after creation; this answers 400 on `roadmap`. Two concurrent opposite moves cannot both succeed.
+
+**Focus-session versions.** `expected_version` is a whole number; a string such as `"2"` is accepted. Anything else is a 400 field error. A stale version answers 409 with code `version_conflict` and changes nothing.
+
+**Editing a session (PATCH).**
+- Requires `expected_version`, and increments the version.
+- An open session may change `title`, `notes`, `outcome` and `learning`; an ended session only `notes`, `outcome` and `learning`.
+- `area`, `task`, `roadmap_item` and `is_deep_work` are refused in every state with code `use_correction`.
+- Any other field is refused by name.
+
+**Correcting an ended session.** `POST /sessions/<id>/corrections` takes `reason` and `expected_version`, plus any of:
+- `started_at`, `ended_at`;
+- `area` (one of the user's active categories);
+- `task`, `roadmap_item` (the user's own, or `null`);
+- `is_deep_work`.
+
+Rules:
+- A correction must change something.
+- The end may be at most 5 minutes in the future, and a session at most 24 hours long.
+- Only the part of each pause inside the corrected window is subtracted.
+- Before and after values go to the session's corrections record.
+- The linked schedule entry takes the corrected category, label, task and roadmap item in the same transaction, even when it is closed. Insights therefore counts the corrected minutes once, under the corrected category.
+- If any step fails, nothing is written.
+
+**Linked schedule entries.** An entry with a linked focus session refuses a *change* of `area`, `task` or `roadmap_node`, with a 400 field error. Re-sending the current value is accepted.
+
+**Duplicates and invalid combinations.**
+- Every database constraint is validated before saving: unique (including case-insensitive and conditional), check and overlap constraints. A violation is a 400 field error with a specific message, and nothing is written.
+- If two requests race past validation, the database answers. A unique, overlap or foreign-key violation then answers 409 with code `conflict`; a check violation answers 400. Never 500.
+- `water` and `nutrition` hold one total per day. A second `POST` for the same `local_date` updates that day's entry (200). If the existing entry is archived, the `POST` is refused.
+- Plan items sent without a `position` are appended after the plan's last current item.
+- A taken position, or a task already current on a plan, is a 400 field error.
+- Carry-over appends after the destination's last item.
+
+**Add to Today.** `POST /roadmap-nodes/<id>/add-to-today` does all of this in one transaction:
+1. Reuses the item's open task, creating one only if none exists.
+2. Plans it for today (in the user's timezone), after the last item. If it is planned for another day, it carries it over.
+3. With `{"start_focus": true, "session_id": <uuid>, "area": <id>}`, also starts the focus session. `area` defaults to the roadmap's category.
+
+Any failure rolls back every write. A repeated request returns the same task and plan item. The response is `{task, plan_item, session, created_task}`.
+
+**Integrity check.** `manage.py check_data_integrity` is read-only and exits 1 on any finding. It reports:
+- roadmap cycles;
+- cross-roadmap parents;
+- links between different users' records;
+- linked entries that disagree with their focus session.
