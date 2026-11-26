@@ -52,6 +52,8 @@ def test_a_missing_csrf_token_is_not_reported_as_signed_out(user):
 
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "csrf_failed"
+    # Django's own reason is kept for diagnosis (the message stays friendly).
+    assert response.json()["error"]["reason"] == "CSRF cookie not set."
 
 
 @pytest.mark.django_db

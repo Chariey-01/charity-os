@@ -1,3 +1,4 @@
+import re
 from collections import Counter
 
 from django.core.exceptions import ObjectDoesNotExist
@@ -52,6 +53,13 @@ def _is_csrf_rejection(exc):
     )
 
 
+def _csrf_reason(exc):
+    """Django's reason ("CSRF token missing.", "Origin checking failed - ..."),
+    printable ASCII only and capped: it can quote the client's Origin header."""
+    text = str(exc.detail).removeprefix("CSRF Failed: ")
+    return re.sub(r"[^\x20-\x7e]", "?", text).replace('"', "'")[:200]
+
+
 def _log_csrf_rejection(exc, context):
     if _is_csrf_rejection(exc):
         import logging
@@ -63,6 +71,7 @@ def _log_csrf_rejection(exc, context):
             "csrf_rejected",
             request=getattr(request, "_request", request),
             method=getattr(request, "method", None),
+            reason=f'"{_csrf_reason(exc)}"',
             level=logging.WARNING,
         )
 
@@ -139,6 +148,7 @@ def exception_handler(exc, context):
             403,
             "csrf_failed",
             "Your security token is missing or out of date. Reload and try again.",
+            reason=_csrf_reason(exc),
         )
     request = context.get("request")
     instead = getattr(context.get("view"), "delete_instead", None)
