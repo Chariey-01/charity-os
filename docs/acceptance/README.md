@@ -63,3 +63,16 @@ cp docs/acceptance/acceptance.mjs /tmp/e2e/ && echo 'choose-one' > /tmp/e2e/pw
 ./docs/acceptance/reset-acceptance-db.sh          # refuses any DB not named *acceptance*
 (cd /tmp/e2e && CHROME_PATH=$(which google-chrome) node acceptance.mjs /tmp/e2e/shots /tmp/e2e/pw)
 ```
+
+## Life OS, private beta, push and demo journeys (28 Nov 2026)
+
+Four more scripts drive real Chrome (playwright-core, `--no-save`) against a throwaway database. They read the demo password from a file and never contain one.
+
+| Script | What it checks | Last result (production build, `vite preview`) |
+|---|---|---|
+| `life-os.mjs <base> <shots> <pw-file> [width]` | Vision (evidence rule), goal + milestones (progress), AI Engineering template, resources, project + task + checklist, challenge pause/resume, My Journey, Me/Plan hubs, older screens, refresh; horizontal overflow on every screen | 16/16 at 360, 390, 430, 820 and 1280 px |
+| `beta.mjs <base> <pw-file> <shots>` | Two sessions: beta invite → sign-up → reuse refused → partner invite/accept → share one goal → partner sees only it (API-checked) and cheers → feedback → reset link | 11/11 |
+| `push.mjs <base> <pw-file> <shots>` | Real Web Push: Chrome subscribes through `fcm.googleapis.com`, the backend sends a test, the service worker shows it with Open and Snooze. Needs VAPID keys in the backend's environment and `http://localhost` (a secure context) | Passed on 6 of 8 runs; the 2 failures were Chrome's first push-service registration stalling in a brand-new headless profile (the app now reports this after 30 s) |
+| `demo.mjs <base> <pw-file> <out>` | Records the 2-minute product demonstration (`charityos-demo.webm`) with captions and a DEMO DATA badge | 12/12 scenes |
+
+`acceptance.mjs` was updated for the five-tab shell (Settings and Insights are under **Me**) and passed 16/16 again on the production build.

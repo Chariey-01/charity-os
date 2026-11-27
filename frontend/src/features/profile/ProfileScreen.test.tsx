@@ -71,11 +71,12 @@ test("reflection: a new day is created once", async () => {
   expect(api.writes()[0].body).toMatchObject({ local_date: TODAY, went_well: "A" });
 });
 
-test("reminder settings save preferences and state that reminders need the app open", async () => {
+test("reminder settings save preferences and point to phone notification setup", async () => {
   window.location.hash = "#/profile/reminders";
   const api = mockApi({ "PATCH /preferences": (call: { body: Record<string, unknown> }) => ({ ...prefs, ...call.body }) });
   render(<App />);
-  expect(await screen.findByText(/while CharityOS is open/)).toBeInTheDocument();
+  expect(await screen.findByText(/even when CharityOS is closed/)).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: /Reminders and calendar/ })).toHaveAttribute("href", "#/reminders");
   expect(screen.getByText(/not supported on this device/)).toBeInTheDocument();
   expect(screen.getByLabelText("Remind me before")).toBeDisabled();
 

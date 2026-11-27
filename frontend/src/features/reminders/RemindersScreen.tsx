@@ -170,7 +170,7 @@ function NotificationsPanel() {
       <div className="action-strip">
         {state === "off" && config?.configured && config.public_key && (
           <button type="button" className="button small" disabled={busy || !app.online} onClick={() => run(() => enablePush(config.public_key!), "Notifications on for this device")}>
-            Turn on notifications
+            {busy ? "Turning on… (this can take a few seconds)" : "Turn on notifications"}
           </button>
         )}
         {state === "on" && (

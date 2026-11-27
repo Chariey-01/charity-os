@@ -2,6 +2,18 @@ import { api, post } from "./api";
 
 export type PushState = "unsupported" | "denied" | "off" | "on";
 
+export const SUBSCRIBE_TIMEOUT_MS = 30_000;
+
+export function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (value) => (clearTimeout(timer), resolve(value)),
+      (error) => (clearTimeout(timer), reject(error)),
+    );
+  });
+}
+
 export function pushSupported() {
   return typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 }
@@ -42,7 +54,14 @@ export async function enablePush(publicKey: string) {
   if (permission !== "granted") throw new Error("Notifications are blocked. Allow them for CharityOS in your browser or phone settings.");
   const reg = await registration();
   let sub = await reg.pushManager.getSubscription();
-  if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(publicKey) });
+  // The browser registers with its push service (Google's, on Android) the
+  // first time; that can stall on a poor connection. Never wait silently.
+  if (!sub)
+    sub = await withTimeout(
+      reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(publicKey) }),
+      SUBSCRIBE_TIMEOUT_MS,
+      "Your browser's push service did not answer in time. Check your connection and tap Turn on notifications again.",
+    );
   const json = sub.toJSON();
   await post("/push/subscriptions", { endpoint: json.endpoint, keys: json.keys, device_label: deviceLabel() });
 }

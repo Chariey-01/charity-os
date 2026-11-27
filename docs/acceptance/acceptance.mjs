@@ -27,6 +27,11 @@ let n = 0;
 const shot = async (name) => { n += 1; const file = `${shots}/${String(n).padStart(2, "0")}-${name}.png`; await page.waitForTimeout(350); await page.screenshot({ path: file }); };
 const api = async (path) => (await page.request.get(`${BASE}/api/v1${path}`)).json();
 const nav = (name) => page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name });
+// Settings (Profile) and Insights live under the Me tab since the five-tab shell.
+const openMe = async (link) => {
+  await nav("Me").click();
+  await page.getByRole("link", { name: new RegExp(`^${link}`) }).click();
+};
 const sheet = () => page.getByRole("dialog");
 
 // 1. Install / open
@@ -41,7 +46,7 @@ const sw = await page.evaluate(async () => { const reg = await navigator.service
 assert(sw.active, `service worker active (scope ${sw.scope})`);
 
 // Align the profile timezone with the device via the UI.
-await nav("Profile").click();
+await openMe("Settings");
 const tzButton = page.getByRole("button", { name: /Use this device's timezone/ });
 if (await tzButton.count()) { await tzButton.click(); await page.getByText(`Timezone set to ${tz}`).waitFor(); }
 assert((await api("/me")).timezone === tz, `user timezone is ${tz}`);
@@ -199,7 +204,8 @@ const expected = Math.round(session.duration_seconds / 60) + 60 + 45;
 assert(tracked === expected, `time by category counts each minute once (${tracked} = ${expected})`);
 assert(insights.week.completed >= 3 && insights.week.milestones[0].reached, "weekly milestone of 3 reached");
 
-await nav("Insights").click();
+await openMe("Insights");
+await page.getByRole("tab", { name: "Trends" }).click();
 await page.locator(".stat-grid").waitFor();
 await page.getByRole("radio", { name: "7 days" }).click();
 await page.waitForTimeout(800);
@@ -208,7 +214,7 @@ await page.locator(".chart").first().scrollIntoViewIfNeeded();
 await shot("insights-charts");
 await page.locator(".health-section").scrollIntoViewIfNeeded();
 await shot("insights-health");
-await nav("Profile").click();
+await openMe("Settings");
 await page.getByRole("link", { name: "History" }).click();
 await page.getByText("Solved 4 knapsack", { exact: false }).first().waitFor();
 await shot("history");

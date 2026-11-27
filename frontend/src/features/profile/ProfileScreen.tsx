@@ -332,9 +332,9 @@ function Reminders() {
       <section className="panel notice-panel">
         <h2 className="panel-title"><Icon name="bell" size={18} /> How reminders work</h2>
         <p>
-          Reminders fire <b>while CharityOS is open</b>, including when it is installed and running in the background
-          for a short time. Phones may pause background apps, so a closed app cannot remind you. Background push
-          notifications are not available yet.
+          These switches choose <b>which</b> reminders you get: activities about to start, daily planning and the weekly review. They arrive as
+          phone notifications even when CharityOS is closed, once you turn notifications on for this device in{" "}
+          <a href="#/reminders">Me → Reminders and calendar</a>. While the app is open you also see them inside it.
         </p>
         <p className="muted">
           System notifications: {permission === "granted" ? "allowed" : permission === "denied" ? "blocked in browser settings — in-app reminders will be used" : permission === "unsupported" ? "not supported on this device — in-app reminders will be used" : "not yet allowed"}
