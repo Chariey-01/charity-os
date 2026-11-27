@@ -45,9 +45,9 @@ load_connection_env() {
   if [[ -z "${PGPASSWORD:-}" && -n "${POSTGRES_PASSWORD:-}" ]]; then
     export PGPASSWORD="$POSTGRES_PASSWORD"
   fi
-  # Production settings prefer DATABASE_URL over POSTGRES_*, so with it set a
-  # manage.py step could reach a different server than pg_dump. Refuse rather
-  # than guess which one was meant.
+  # Production settings take DATABASE_URL in place of POSTGRES_*, so with it
+  # set a manage.py step could reach a different server than pg_dump. Refuse
+  # rather than guess which one was meant.
   if [[ -n "${DATABASE_URL:-}" ]]; then
     refuse "DATABASE_URL is set; ops/db scripts use PG*/POSTGRES_* only. Unset DATABASE_URL and name the server with PGHOST/PGPORT."
   fi

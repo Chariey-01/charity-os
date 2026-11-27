@@ -1,6 +1,6 @@
 # Deployment plan (private use)
 
-**Status (26 Nov 2026): planned, not done.** Nothing has been deployed. No hosting has been bought, no domain registered, and no account created. The owner must approve, separately:
+**Status (27 Nov 2026): prepared, not deployed.** The code changes this plan called for are made on `feature/production-deploy`: Django serves the PWA through WhiteNoise, the platform's `DATABASE_URL` is accepted, and `render.yaml` plus `ops/deploy/` hold the deployment. The recommended host and the step-by-step procedure are in the [production runbook](production-runbook.md). Nothing has been deployed. No hosting has been bought, no domain registered, and no account created. The owner must approve, separately:
 - the hosting choice and its cost;
 - the domain;
 - the deployment itself;
@@ -22,9 +22,7 @@ There is one HTTPS origin, for example `https://app.example.org`. Both the PWA a
 | `/static/` | `backend/staticfiles` (`manage.py collectstatic --noinput`), for the admin |
 | `/api/`, `/admin/` | Django through gunicorn: `gunicorn config.wsgi` from `backend/` |
 
-**Django does not serve the frontend.** There is no WhiteNoise and no catch-all route. The proxy or web server in front must serve `frontend/dist` and `/static/` itself. This works with no code change on a small VPS with Caddy or nginx.
-
-A platform with a single process and no web server of your own, such as one PaaS web service, needs a code change first: WhiteNoise plus a route that serves `index.html`. That change needs its own review and tests. It is not part of this release.
+**Django serves the frontend** with production settings (`config/frontend.py`): WhiteNoise serves `frontend/dist` at `/` and `/static/`. The app routes with the URL hash, so no catch-all route is needed. `index.html`, `sw.js` and the manifest are sent with `no-cache`, hashed assets as immutable, and `index.html` carries a Content-Security-Policy. This works the same on one PaaS web service and on a VPS behind Caddy or nginx.
 
 ## 2. Hosting requirements
 
@@ -47,7 +45,7 @@ Set these in the platform's secret store, never in the repository. `.env.example
 | `DJANGO_SECRET_KEY` | A new random value of 50 or more characters, used only here. Production refuses to start without it. |
 | `DJANGO_ALLOWED_HOSTS` | The host name only, for example `app.example.org` |
 | `DJANGO_CSRF_TRUSTED_ORIGINS` | `https://app.example.org` |
-| `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT` | **All five, explicitly.** Settings read only these. A platform's `DATABASE_URL` is ignored by Django, and the `ops/db` scripts refuse to run while it is set. The defaults (`charityos` on `localhost`) are for development only. |
+| `DATABASE_URL` **or** `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT` | Production accepts a platform's `DATABASE_URL` (`postgres://`, optional `sslmode`), or all five `POSTGRES_*`, **never both**: it refuses to start when both are set (`config/database.py`). Development and tests read only `POSTGRES_*`, and the `ops/db` scripts refuse to run while `DATABASE_URL` is set. The defaults (`charityos` on `localhost`) are for development only. |
 | `CHARITYOS_TRUSTED_PROXIES` | Empty until the proxy's address is known, then exactly that address (see [reverse-proxy.md](reverse-proxy.md)) |
 
 The database password and secret key are owned by the operator. Use a database role that owns only the CharityOS database.
@@ -71,7 +69,7 @@ Follow [reverse-proxy.md](reverse-proxy.md). **Deployment stays blocked until it
   - repeated `csrf_rejected`;
   - HTTP 5xx responses;
   - the process restarting.
-- **Uptime.** Check `GET /api/v1/auth/csrf` every few minutes (it is anonymous and answers 200).
+- **Uptime.** Check `GET /api/v1/health` every few minutes. It is anonymous, runs `SELECT 1` on the database, and answers 200 or 503 with no details. It is answered before host and HTTPS checks, so a platform's internal probe works too (`config/health_probe.py`).
 - **Django errors (L1, fixed on `feature/daily-operations`).** Unhandled exceptions and `django.security` errors are written to stderr, one redacted line plus the traceback each (`config/error_logging.py`): emails masked, password, token, secret, session, CSRF and Authorization values replaced, and the path without its query string. Gunicorn writes its own access and error lines to stderr as well (`--access-logfile - --error-logfile -`). Collect stderr. Without `DEBUG`, nothing else writes these errors.
 
 ## 7. Backups and retention
@@ -105,6 +103,7 @@ Follow [reverse-proxy.md](reverse-proxy.md). **Deployment stays blocked until it
 
 All of these must be true before real data goes into a deployment:
 
+- [x] Deployment configuration prepared and verified locally under production settings (`feature/production-deploy`)
 - [ ] Hosting, domain and cost approved by the owner
 - [ ] HTTPS working; `manage.py check --deploy` clean on the host
 - [ ] Proxy check from `reverse-proxy.md` passed, with `CHARITYOS_TRUSTED_PROXIES` set
