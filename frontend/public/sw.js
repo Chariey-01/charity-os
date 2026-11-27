@@ -25,9 +25,13 @@ function usable(response) {
   return Boolean(response && response.ok && (response.type === "basic" || response.type === "default"));
 }
 
+function assetsOf(html) {
+  return [...new Set([...html.matchAll(ASSET)].map((match) => match[1]))];
+}
+
 /** Store ``html`` as the shell only if all of its assets load; returns true when it did. */
 async function adoptShell(html, headers) {
-  const assets = [...new Set([...html.matchAll(ASSET)].map((match) => match[1]))];
+  const assets = assetsOf(html);
   const fetched = await Promise.all(
     assets.map((path) =>
       fetch(path, { cache: "no-cache" })
@@ -49,7 +53,15 @@ async function adoptShell(html, headers) {
 
 async function refreshShell(response) {
   if (!usable(response) || !(response.headers.get("Content-Type") || "").includes("text/html")) return false;
-  return adoptShell(await response.text(), response.headers);
+  const html = await response.text();
+  // Unchanged deployment with every asset still cached: nothing to download.
+  const cache = await caches.open(VERSION);
+  const current = await cache.match("/");
+  if (current && (await current.text()) === html) {
+    const cached = await Promise.all(assetsOf(html).map((path) => cache.match(path)));
+    if (cached.every(Boolean)) return true;
+  }
+  return adoptShell(html, response.headers);
 }
 
 self.addEventListener("install", (event) => {

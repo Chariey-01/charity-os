@@ -26,8 +26,10 @@ function worker() {
   const store = new Map<string, Map<string, Response>>();
   const path = (request: unknown) =>
     new URL(typeof request === "string" ? request : (request as { url: string }).url, ORIGIN).pathname;
+  const hits: Record<string, number> = {};
   const network = async (request: unknown) => {
     if (offline) throw new TypeError("Failed to fetch");
+    hits[path(request)] = (hits[path(request)] ?? 0) + 1;
     const handler = routes[path(request)];
     return handler ? handler() : new Response("Not found", { status: 404 });
   };
@@ -59,6 +61,7 @@ function worker() {
   return {
     routes,
     store,
+    hits,
     goOffline: () => (offline = true),
     async lifecycle(type: "install" | "activate") {
       const waits: Promise<unknown>[] = [];
@@ -157,6 +160,28 @@ describe("service worker", () => {
     expect(await sw.shell()).toContain(v2.js);
     expect(sw.cached(v2.js) && sw.cached(v2.css)).toBe(true);
     expect(sw.cached(v1.js) || sw.cached(v1.css)).toBe(false);
+  });
+
+  it("does not download an unchanged shell's assets again on every page load", async () => {
+    const v1 = deployed(sw, "v1");
+    await sw.lifecycle("install");
+    const before = sw.hits[v1.js];
+
+    await sw.request("/", "navigate");
+    await sw.request("/", "navigate");
+
+    expect(sw.hits[v1.js]).toBe(before);
+    expect(await sw.shell()).toContain(v1.js);
+  });
+
+  it("re-fetches an unchanged shell's assets if one went missing from the cache", async () => {
+    const v1 = deployed(sw, "v1");
+    await sw.lifecycle("install");
+    sw.store.get(CACHE)!.delete(v1.css);
+
+    await sw.request("/", "navigate");
+
+    expect(sw.cached(v1.css)).toBe(true);
   });
 
   it("does not cache failed asset responses", async () => {
