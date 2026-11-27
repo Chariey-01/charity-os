@@ -1,0 +1,36 @@
+// CharityOS on Cloudflare: the PWA plus a same-origin proxy to the Django
+// backend (src/worker.js). Runs on the Workers Free plan.
+// Deployment steps: docs/operations/cloudflare-deployment.md
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "charityos",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-11-27",
+  // https://charityos.<your-subdomain>.workers.dev; no domain to buy.
+  "workers_dev": true,
+  // No per-version preview addresses: only the deployed version is reachable.
+  "preview_urls": false,
+  "build": {
+    // Builds frontend/dist before every deploy (and `wrangler dev`).
+    "command": "./build.sh"
+  },
+  "assets": {
+    "directory": "../frontend/dist",
+    "binding": "ASSETS",
+    // The app routes with the URL hash; any other unknown path gets the shell.
+    "not_found_handling": "single-page-application",
+    // The Worker sees every request: it forwards the API and sets the
+    // security and cache headers on the app's files.
+    "run_worker_first": true
+  },
+  "vars": {
+    // The backend's own https:// address (not a secret: it refuses requests
+    // without EDGE_PROXY_SECRET). Replace before the first deploy.
+    "BACKEND_ORIGIN": "https://backend.invalid"
+  },
+  // EDGE_PROXY_SECRET is a secret: `npx wrangler secret put EDGE_PROXY_SECRET`.
+  // For `wrangler dev`, put both values in .dev.vars (git-ignored).
+  "observability": {
+    "enabled": true
+  }
+}
