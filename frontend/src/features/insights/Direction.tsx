@@ -31,7 +31,7 @@ export function Direction() {
                   {goal.overdue ? <span className="tag danger">Overdue</span> : goal.at_risk ? <span className="tag warn">At risk</span> : null}
                 </span>
                 <ProgressLine ratio={goal.ratio} label={goal.title} />
-                <small>{goal.activity_30d ? `${goal.activity_30d} steps forward in 30 days` : "No activity in 30 days"}{goal.status === "paused" ? " · paused" : ""}</small>
+                <small>{goal.activity_30d ? `${goal.activity_30d} ${goal.activity_30d === 1 ? "step" : "steps"} forward in 30 days` : "No activity in 30 days"}{goal.status === "paused" ? " · paused" : ""}</small>
               </a>
             </li>
           ))}
