@@ -38,6 +38,23 @@ def test_database_url_defaults_port_and_reads_sslmode():
     fields = parse_database_url("postgres://u:p@db.internal/app?sslmode=require")
     assert fields["PORT"] == "5432"
     assert fields["OPTIONS"] == {"sslmode": "require"}
+    assert "DISABLE_SERVER_SIDE_CURSORS" not in fields
+
+
+def test_database_url_takes_neons_pooled_connection_string():
+    fields = parse_database_url(
+        "postgresql://charityos_owner:pw@ep-cool-name-a1b2c3d4-pooler.eu-central-1"
+        ".aws.neon.tech/charityos?sslmode=verify-full&sslrootcert=system"
+        "&channel_binding=require"
+    )
+    assert fields["HOST"] == "ep-cool-name-a1b2c3d4-pooler.eu-central-1.aws.neon.tech"
+    assert fields["OPTIONS"] == {
+        "sslmode": "verify-full",
+        "sslrootcert": "system",
+        "channel_binding": "require",
+    }
+    # PgBouncer in transaction mode cannot keep a server-side cursor open.
+    assert fields["DISABLE_SERVER_SIDE_CURSORS"] is True
 
 
 @pytest.mark.parametrize(
@@ -51,6 +68,8 @@ def test_database_url_defaults_port_and_reads_sslmode():
         "postgresql://u:p@h/db/extra",
         "postgresql://u:p@h/db?sslmode=sometimes",
         "postgresql://u:p@h/db?options=-c%20x",
+        "postgresql://u:p@h/db?channel_binding=maybe",
+        "postgresql://u:p@h/db?sslrootcert=/etc/passwd",
     ],
 )
 def test_database_url_refuses_what_it_cannot_honour(url):
@@ -140,6 +159,28 @@ def test_production_settings_use_the_platform_database_and_serve_the_pwa():
     assert loaded["redirect"] is True
 
 
+EDGE_SECRET = "Yb7Kq2Lm9Nv4Rx8Tz1Wc6Pd3Hf5Js0Ga-Ue_Io7By2"
+BEHIND_CLOUDFLARE = {
+    "CHARITYOS_FRONTEND": "external",
+    "CHARITYOS_EDGE_PROXY_SECRET": EDGE_SECRET,
+    "DJANGO_ALLOWED_HOSTS": "charityos-api.vercel.app",
+    "DJANGO_CSRF_TRUSTED_ORIGINS": "https://charityos.example.workers.dev",
+}
+
+
+def test_behind_cloudflare_django_serves_no_frontend_but_keeps_its_guards():
+    result = load_production(**BEHIND_CLOUDFLARE)
+    assert result.returncode == 0, result.stderr
+    loaded = json.loads(result.stdout)
+    assert loaded["root"] == "None"  # WhiteNoise serves only the admin's files
+    assert loaded["middleware"][:2] == [
+        "config.health_probe.HealthProbeMiddleware",
+        "config.edge_proxy.EdgeProxyMiddleware",
+    ]
+    assert loaded["cookies"] == [True, True]
+    assert loaded["redirect"] is True
+
+
 @pytest.mark.parametrize(
     ("overrides", "message"),
     [
@@ -156,6 +197,19 @@ def test_production_settings_use_the_platform_database_and_serve_the_pwa():
             "must all be https://",
         ),
         ({"POSTGRES_HOST": "localhost"}, "are both set"),
+        ({"CHARITYOS_FRONTEND": "cloudflare"}, "must be django or external"),
+        (
+            {**BEHIND_CLOUDFLARE, "CHARITYOS_EDGE_PROXY_SECRET": ""},
+            "needs CHARITYOS_EDGE_PROXY_SECRET",
+        ),
+        (
+            {**BEHIND_CLOUDFLARE, "CHARITYOS_EDGE_PROXY_SECRET": "too-short"},
+            "at least 32 characters",
+        ),
+        (
+            {**BEHIND_CLOUDFLARE, "DJANGO_CSRF_TRUSTED_ORIGINS": ""},
+            "needs DJANGO_CSRF_TRUSTED_ORIGINS",
+        ),
     ],
 )
 def test_production_settings_refuse_to_start_misconfigured(overrides, message):

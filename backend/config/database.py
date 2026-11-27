@@ -7,6 +7,10 @@ accepts that, but **never both at once**: with two sources a ``manage.py`` step
 could reach a different server from the one the operator meant. The ``ops/db``
 scripts refuse to run while ``DATABASE_URL`` is set for the same reason.
 
+Accepted options: ``sslmode``, ``channel_binding`` and ``sslrootcert=system``
+(Neon's connection strings use the first two; ``verify-full`` needs the third
+so libpq checks the server against the system's certificate authorities).
+
 Error messages never repeat the URL: it contains the database password.
 """
 
@@ -24,6 +28,9 @@ POSTGRES_VARIABLES = (
 SSL_MODES = frozenset(
     {"disable", "allow", "prefer", "require", "verify-ca", "verify-full"}
 )
+CHANNEL_BINDING = frozenset({"disable", "prefer", "require"})
+# A file path here could be anything on the host; only the system's CA store.
+SSL_ROOT_CERTS = frozenset({"system"})
 
 
 def parse_database_url(url):
@@ -43,18 +50,24 @@ def parse_database_url(url):
             "DATABASE_URL must name a user, a host and one database."
         )
     query = parse_qs(parts.query, keep_blank_values=True)
-    unknown = sorted(set(query) - {"sslmode"})
+    allowed = {
+        "sslmode": SSL_MODES,
+        "channel_binding": CHANNEL_BINDING,
+        "sslrootcert": SSL_ROOT_CERTS,
+    }
+    unknown = sorted(set(query) - set(allowed))
     if unknown:
         raise ImproperlyConfigured(
             "DATABASE_URL has unsupported options: " + ", ".join(unknown) + "."
         )
     options = {}
-    if "sslmode" in query:
-        mode = query["sslmode"][-1]
-        if mode not in SSL_MODES:
-            raise ImproperlyConfigured("DATABASE_URL has an unknown sslmode.")
-        options["sslmode"] = mode
-    return {
+    for option, values in allowed.items():
+        if option in query:
+            value = query[option][-1]
+            if value not in values:
+                raise ImproperlyConfigured(f"DATABASE_URL has an unknown {option}.")
+            options[option] = value
+    fields = {
         "NAME": name,
         "USER": unquote(parts.username),
         "PASSWORD": unquote(parts.password or ""),
@@ -62,6 +75,11 @@ def parse_database_url(url):
         "PORT": str(port or 5432),
         "OPTIONS": options,
     }
+    # Neon's pooled endpoint (PgBouncer in transaction mode) has "-pooler" in
+    # its host name; server-side cursors do not survive transaction pooling.
+    if "-pooler." in parts.hostname:
+        fields["DISABLE_SERVER_SIDE_CURSORS"] = True
+    return fields
 
 
 def database_from_url(environ):

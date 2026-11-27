@@ -1,8 +1,13 @@
 """Production: one HTTPS origin, Django behind the hosting platform's proxy.
 
-Django serves the API, the admin and the built PWA (``config/frontend.py``).
-Deployment, environment variables and recovery are described in
-``docs/operations/production-runbook.md``.
+Two layouts, chosen with ``CHARITYOS_FRONTEND``:
+
+* ``django`` (default): Django serves the API, the admin and the built PWA
+  (``config/frontend.py``). See ``docs/operations/production-runbook.md``.
+* ``external``: Cloudflare serves the PWA and forwards ``/api/``, ``/admin/``
+  and ``/static/`` here, so the site is still one origin. Django then answers
+  only requests carrying ``CHARITYOS_EDGE_PROXY_SECRET``
+  (``config/edge_proxy.py``). See ``docs/operations/cloudflare-deployment.md``.
 """
 
 import os
@@ -11,12 +16,14 @@ from pathlib import Path
 from django.core.exceptions import ImproperlyConfigured
 
 from config.database import database_from_url
+from config.edge_proxy import validate_secret
 from config.frontend import MIMETYPES, add_headers, immutable_file
 
 from .base import *  # noqa: F403
 from .base import (
     ALLOWED_HOSTS,
     BASE_DIR,
+    CHARITYOS_EDGE_PROXY_SECRET,
     CSRF_TRUSTED_ORIGINS,
     DATABASES,
     MIDDLEWARE,
@@ -48,6 +55,26 @@ if not ALLOWED_HOSTS:
 if any(not origin.startswith("https://") for origin in CSRF_TRUSTED_ORIGINS):
     raise ImproperlyConfigured("DJANGO_CSRF_TRUSTED_ORIGINS must all be https://")
 
+FRONTEND_MODE = os.environ.get("CHARITYOS_FRONTEND", "django").strip() or "django"
+if FRONTEND_MODE not in ("django", "external"):
+    raise ImproperlyConfigured("CHARITYOS_FRONTEND must be django or external")
+validate_secret(CHARITYOS_EDGE_PROXY_SECRET)  # at start-up, not on a request
+if FRONTEND_MODE == "external":
+    # This host has a public address of its own; without the secret anyone
+    # could reach the API and the admin around Cloudflare.
+    if not CHARITYOS_EDGE_PROXY_SECRET:
+        raise ImproperlyConfigured(
+            "CHARITYOS_FRONTEND=external needs CHARITYOS_EDGE_PROXY_SECRET, the "
+            "value the Cloudflare Worker sends (docs/operations/"
+            "cloudflare-deployment.md)."
+        )
+    # The browser's origin is the Worker's, not this host's.
+    if not CSRF_TRUSTED_ORIGINS:
+        raise ImproperlyConfigured(
+            "CHARITYOS_FRONTEND=external needs DJANGO_CSRF_TRUSTED_ORIGINS set to "
+            "the site's https:// address on Cloudflare."
+        )
+
 # Database: the five POSTGRES_* variables, or a platform's DATABASE_URL, never
 # both (config/database.py). Connections are kept for a minute and checked
 # before reuse, so a restarted database server costs one retry, not errors.
@@ -74,8 +101,14 @@ MIDDLEWARE.insert(
     MIDDLEWARE.index("django.middleware.security.SecurityMiddleware") + 1,
     "whitenoise.middleware.WhiteNoiseMiddleware",
 )
-WHITENOISE_ROOT = Path(
-    os.environ.get("CHARITYOS_FRONTEND_DIST") or BASE_DIR.parent / "frontend" / "dist"
+# With an external frontend WhiteNoise serves only the admin's files.
+WHITENOISE_ROOT = (
+    None
+    if FRONTEND_MODE == "external"
+    else Path(
+        os.environ.get("CHARITYOS_FRONTEND_DIST")
+        or BASE_DIR.parent / "frontend" / "dist"
+    )
 )
 WHITENOISE_INDEX_FILE = True
 WHITENOISE_IMMUTABLE_FILE_TEST = immutable_file
