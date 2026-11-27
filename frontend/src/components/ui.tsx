@@ -20,6 +20,18 @@ const ICONS: Record<string, ReactNode> = {
   offline: <><path d="M2 8.5a15 15 0 0 1 20 0M5 12a10 10 0 0 1 14 0M8.5 15.5a5 5 0 0 1 7 0" /><path d="M3 3l18 18" /></>,
   sparkle: <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" />,
   bell: <><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z" /><path d="M10 20a2 2 0 0 0 4 0" /></>,
+  plan: <><circle cx="12" cy="12" r="9" /><path d="M15.5 8.5l-2 5-5 2 2-5z" /></>,
+  me: <><path d="M4 19.5V6a2 2 0 0 1 2-2h12v15.5H6a2 2 0 0 0-2 2" /><path d="M8 8h6M8 11.5h4" /></>,
+  vision: <><path d="M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12z" /><circle cx="12" cy="12" r="3" /></>,
+  goal: <><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1.3" /></>,
+  project: <><path d="M3 7.5a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></>,
+  journey: <><path d="M5 21V4M5 4h11l-2 4 2 4H5" /></>,
+  challenge: <><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z" /><path d="M7 6H4v1a3 3 0 0 0 3 3M17 6h3v1a3 3 0 0 1-3 3" /></>,
+  archive: <><rect x="3" y="4" width="18" height="4" rx="1" /><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4" /></>,
+  link: <><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1" /><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" /></>,
+  people: <><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20c1-3.5 3.5-5.5 6.5-5.5s5.5 2 6.5 5.5" /><circle cx="17" cy="9" r="2.5" /><path d="M16 14.5c2.5 0 4.5 1.5 5.5 4.5" /></>,
+  edit: <><path d="M4 20h4L19 9l-4-4L4 16z" /><path d="M13.5 6.5l4 4" /></>,
+  flag: <><path d="M5 21V4M5 4c5-2 9 2 14 0v9c-5 2-9-2-14 0" /></>,
 };
 
 export function Icon({ name, size = 22, label }: { name: keyof typeof ICONS | string; size?: number; label?: string }) {
@@ -119,10 +131,10 @@ export function Loading({ label = "Loading…" }: { label?: string }) {
   );
 }
 
-export function EmptyState({ title, body, action }: { title: string; body?: string; action?: ReactNode }) {
+export function EmptyState({ title, body, action, icon = "sparkle" }: { title: string; body?: string; action?: ReactNode; icon?: string }) {
   return (
     <div className="state-empty">
-      <div className="state-art" aria-hidden="true"><Icon name="sparkle" size={26} /></div>
+      <div className="state-art" aria-hidden="true"><Icon name={icon} size={26} /></div>
       <h3>{title}</h3>
       {body && <p>{body}</p>}
       {action}
@@ -260,5 +272,37 @@ export function Switch({
         {hint && <small id={`${id}-h`}>{hint}</small>}
       </span>
     </label>
+  );
+}
+
+export function ScreenHead({ eyebrow, title, lead, action, back }: { eyebrow: string; title: string; lead?: string; action?: ReactNode; back?: { href: string; label: string } }) {
+  return (
+    <header className="screen-head">
+      {back && (
+        <a className="back-link" href={back.href}>
+          <Icon name="chevronLeft" size={18} /> {back.label}
+        </a>
+      )}
+      <div className="screen-head-row">
+        <div>
+          <p className="eyebrow">{eyebrow}</p>
+          <h1>{title}</h1>
+        </div>
+        {action}
+      </div>
+      {lead && <p className="muted">{lead}</p>}
+    </header>
+  );
+}
+
+/** A progress bar that admits when no measure exists instead of showing 0%. */
+export function ProgressLine({ ratio, label }: { ratio: number | null; label: string }) {
+  if (ratio === null) return <p className="no-measure">No measure yet</p>;
+  const percent = Math.round(ratio * 100);
+  return (
+    <div className="progress-line">
+      <Meter value={percent} max={100} label={`${label}: ${percent}%`} />
+      <span>{percent}%</span>
+    </div>
   );
 }
