@@ -122,6 +122,17 @@ This report's commit is documentation only; its parent is `b368836`. Its CI runs
 - **Backend CI result:** [Blocked] by the billing lock. Locally reproduced as passing (C3).
 - No earlier run succeeded, so no earlier run can stand in for the latest commit.
 
+**C7a. Runs on the report commit `9fcbc1b1c087e7966ab66797d6e4975809b5fc97`** (pushed 02:36Z, fast-forward from `b368836`, no force):
+
+| Run | Event | Job (ID) | Steps run | Annotation |
+|---|---|---|---|---|
+| [45929333766](https://github.com/Chariey-01/charity-os/actions/runs/45929333766) | `pull_request` | frontend (140278049363), backend (140278049523) | 0, 0 | "…account is locked due to a billing issue." |
+| 45929329758 | `push` | backend (140278035870), frontend (140278036032) | 0, 0 | same |
+
+The lock was still in place at 02:36Z (05:36 EAT). `gh pr checks 5` shows `backend` and `frontend` failing, and nothing pending.
+
+The commit that adds this C7a entry is documentation only, so its own runs will be refused in the same way until billing is fixed. Check them with `gh pr checks 5`.
+
 ### C8. Migration `planning.0011` [Verified]
 
 Independent check: real `migrate` commands against a real migrated database, comparing whole rows (`row_to_json`). **14/14 passed.**
