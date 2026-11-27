@@ -1,4 +1,4 @@
-export type User = { id: string; email: string; display_name: string; timezone: string };
+export type User = { id: string; email: string; display_name: string; timezone: string; is_beta_admin?: boolean };
 
 export type Area = {
   id: string;

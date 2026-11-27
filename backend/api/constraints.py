@@ -11,6 +11,13 @@ NON_FIELD = "non_field_errors"
 
 # constraint name -> (field, message)
 MESSAGES = {
+    "community_invite_uses_within_max": (NON_FIELD, "This invite has been used up."),
+    "community_invite_max_uses_valid": ("max_uses", "Between 1 and 50 uses."),
+    "community_partnership_one_open_per_email": (
+        "email",
+        "You already invited this person.",
+    ),
+    "community_partnership_not_self": ("email", "You cannot invite yourself."),
     "notifications_reminder_repeat_valid": ("repeat", "Choose once, daily or weekly."),
     "notifications_reminder_once_has_date": ("local_date", "Choose the day."),
     "notifications_delivery_once": (NON_FIELD, "This reminder was already sent."),

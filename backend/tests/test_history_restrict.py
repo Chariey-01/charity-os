@@ -25,6 +25,9 @@ pytestmark = pytest.mark.django_db
 STRUCTURAL = {
     ("roadmaps.RoadmapNodePrerequisite", "node"),
     ("roadmaps.RoadmapNodePrerequisite", "prerequisite"),
+    # A cheer exists only inside its partnership; partnerships are never
+    # deleted except when one of the two people is erased.
+    ("community.Cheer", "partnership"),
 }
 RESTRICT_MIGRATIONS = (
     ("planning", "0010"),

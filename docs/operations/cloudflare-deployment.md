@@ -243,7 +243,11 @@ export POSTGRES_DB= POSTGRES_USER= POSTGRES_PASSWORD= POSTGRES_HOST= POSTGRES_PO
   --timezone Africa/Nairobi --challenge-name "My 96-Day Challenge" --with-workstreams
 unset DATABASE_URL DJANGO_SECRET_KEY CHARITYOS_EDGE_PROXY_SECRET
 ```
-`bootstrap_charityos` asks for your password without showing it. It creates categories and workstreams, and no tasks or history.
+`bootstrap_charityos` asks for your password without showing it. It creates categories and workstreams, and no tasks or history. Then make yourself the beta admin, so you can invite friends from the app:
+
+```bash
+../.venv/bin/python manage.py grant_beta_admin --email YOUR-EMAIL
+```
 
 ### D. Vercel: the backend (10 min)
 1. Sign up at [vercel.com](https://vercel.com/signup) on the **Hobby** plan with your GitHub account. Do not add a card.
@@ -266,6 +270,7 @@ unset DATABASE_URL DJANGO_SECRET_KEY CHARITYOS_EDGE_PROXY_SECRET
 | `CHARITYOS_VAPID_PUBLIC_KEY` | from `generate_vapid_keys` (not secret) |
 | `CHARITYOS_VAPID_PRIVATE_KEY` | from `generate_vapid_keys` (**secret**) |
 | `CHARITYOS_VAPID_SUBJECT` | `https://charityos.<subdomain>.workers.dev` |
+| `CHARITYOS_SIGNUP_MODE` | `invite` (friends need an invite code; `closed` turns sign-up off). See `docs/private-beta.md` |
 
 4. Deploy. `backend/vercel.json` runs the function in Frankfurt (`fra1`), and Python comes from `backend/.python-version` (3.12).
 5. Check it. The health probe should answer `{"status": "ok", "database": "ok"}`, and anything else should be refused with `edge_only`:
