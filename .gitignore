@@ -54,3 +54,6 @@ Thumbs.db
 media/
 uploads/
 local_storage/
+
+# Production build output (ops/deploy/build.sh)
+backend/staticfiles/

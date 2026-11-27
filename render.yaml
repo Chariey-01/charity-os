@@ -1,0 +1,61 @@
+# Render Blueprint for CharityOS: one web service (Django serving the API, the
+# admin and the built PWA) and one private PostgreSQL 16 database, both in
+# Frankfurt. About USD 13.30 a month (checked 27 Nov 2026; recheck before
+# buying): web 0.5c-512mb USD 7, database 0.1c-256mb USD 6, 1 GB storage
+# USD 0.30, Hobby workspace USD 0.
+#
+# Nothing in this file is secret. Render generates DJANGO_SECRET_KEY and the
+# database password and keeps them in the service's environment only.
+#
+# Deploying, the first account, migrations, backups and recovery:
+# docs/operations/production-runbook.md
+services:
+  - type: web
+    name: charityos
+    runtime: python
+    region: frankfurt
+    plan: 0.5c-512mb
+    branch: main
+    # Deploy a commit only after its GitHub checks pass. Manual deploys from
+    # the dashboard still work.
+    autoDeployTrigger: checksPass
+    buildCommand: ops/deploy/build.sh
+    # Deploy checks, then migrations: automatic on an empty database, otherwise
+    # only with CHARITYOS_APPROVE_MIGRATIONS set (api/.../predeploy.py).
+    preDeployCommand: cd backend && python manage.py predeploy
+    startCommand: ops/deploy/start.sh
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings.production
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      # The service's own onrender.com host name. Add a custom domain here
+      # (comma-separated) if one is bought later.
+      - key: DJANGO_ALLOWED_HOSTS
+        fromService:
+          name: charityos
+          type: web
+          envVarKey: RENDER_EXTERNAL_HOSTNAME
+      # Internal (private network) URL. Django reads it; the POSTGRES_*
+      # variables must stay unset here (config/database.py refuses both).
+      - key: DATABASE_URL
+        fromDatabase:
+          name: charityos-db
+          property: connectionString
+      # Render's edge proxy addresses are not published, so forwarded headers
+      # are not believed (docs/operations/reverse-proxy.md).
+      - key: CHARITYOS_TRUSTED_PROXIES
+        value: ""
+
+databases:
+  - name: charityos-db
+    region: frankfurt
+    plan: 0.1c-256mb
+    # Same major version as CI and the ops/db tooling (pg_dump 16).
+    postgresMajorVersion: "16"
+    databaseName: charityos
+    user: charityos
+    # No connections from the internet at all; only services in this
+    # workspace and region reach it over Render's private network.
+    ipAllowList: []
