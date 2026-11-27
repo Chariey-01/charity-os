@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     "health",
     "scheduling",
     "growth",
+    "notifications",
 ]
 MIDDLEWARE = [
     # First: answers the platform health probe before host and HTTPS checks.
@@ -199,3 +200,16 @@ CSRF_TRUSTED_ORIGINS = [
     for origin in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",")
     if origin
 ]
+
+# Web Push (notifications/services.py). Generate a pair with
+# `manage.py generate_vapid_keys`. The private key is a secret. Without both,
+# reminders are still scheduled but no push is sent and the app says so.
+CHARITYOS_VAPID_PUBLIC_KEY = os.environ.get("CHARITYOS_VAPID_PUBLIC_KEY", "")
+CHARITYOS_VAPID_PRIVATE_KEY = os.environ.get("CHARITYOS_VAPID_PRIVATE_KEY", "")
+# Push services require a contact: a mailto: or https: address of the operator.
+CHARITYOS_VAPID_SUBJECT = os.environ.get(
+    "CHARITYOS_VAPID_SUBJECT", "https://charityos.charity-jk.workers.dev"
+)
+# Shared with the scheduler (Cloudflare cron trigger) that calls
+# POST /api/v1/internal/reminders/dispatch. At least 32 characters.
+CHARITYOS_CRON_SECRET = os.environ.get("CHARITYOS_CRON_SECRET", "")

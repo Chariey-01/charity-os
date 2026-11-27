@@ -1,7 +1,7 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
-from . import growth_views, schedule_views, views
+from . import growth_views, notification_views, schedule_views, views
 
 router = DefaultRouter(trailing_slash=False)
 for prefix, view in (
@@ -27,6 +27,7 @@ for prefix, view in (
     ("weekly-reviews", views.WeeklyReviewViewSet),
     ("schedule-entries", schedule_views.ScheduleEntryViewSet),
     *growth_views.GROWTH_ROUTES,
+    ("reminders", notification_views.ReminderViewSet),
 ):
     router.register(prefix, view, basename=prefix)
 router.register("activity", growth_views.ActivityViewSet, basename="activity")
@@ -46,4 +47,12 @@ urlpatterns = [
     path("journey/year-end", growth_views.year_end_view),
     path("roadmap-templates", growth_views.roadmap_templates),
     path("roadmaps/from-template", growth_views.roadmap_from_template),
+    path("push/config", notification_views.push_config),
+    path("push/subscriptions", notification_views.push_subscriptions),
+    path("push/unsubscribe", notification_views.push_unsubscribe),
+    path("push/test", notification_views.push_test),
+    path("push/snooze", notification_views.push_snooze),
+    path("internal/reminders/dispatch", notification_views.dispatch_view),
+    path("calendar/feed", notification_views.calendar_feed),
+    path("calendar/<str:token>.ics", notification_views.calendar_ics),
 ] + router.urls

@@ -11,6 +11,9 @@ NON_FIELD = "non_field_errors"
 
 # constraint name -> (field, message)
 MESSAGES = {
+    "notifications_reminder_repeat_valid": ("repeat", "Choose once, daily or weekly."),
+    "notifications_reminder_once_has_date": ("local_date", "Choose the day."),
+    "notifications_delivery_once": (NON_FIELD, "This reminder was already sent."),
     "growth_vision_kind_valid": ("kind", "Choose vision, aspiration, manifestation or identity."),
     "growth_vision_horizon_valid": ("horizon", "Choose short, medium, long or lifetime."),
     "growth_vision_realised_consistent": (
