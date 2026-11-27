@@ -5,6 +5,7 @@ state's apps for historical models, so the same graph serves model tests,
 migration tests and the erasure command's tests.
 """
 
+import json
 from datetime import UTC, date, datetime, timedelta
 
 from django.apps import apps as current_apps
@@ -267,5 +268,15 @@ def added_columns(registry, columns_from):
             if field.attname not in old
         ]
         if new:
-            added[name] = set(model.objects.values_list(*new))
+            added[name] = {
+                tuple(_hashable(value) for value in row)
+                for row in model.objects.values_list(*new)
+            }
     return added
+
+
+def _hashable(value):
+    # JSON columns (a task's checklist) come back as lists or dicts.
+    if isinstance(value, list | dict):
+        return json.dumps(value, sort_keys=True, default=str)
+    return value

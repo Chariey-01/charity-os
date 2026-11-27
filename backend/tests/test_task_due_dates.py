@@ -133,10 +133,12 @@ def test_reversing_is_refused_while_due_dates_exist(user):
         with pytest.raises(RuntimeError, match="1 task\\(s\\) have a due date"):
             migrate_planning("0010_restrict_history_deletes")
         assert due_date_column_exists()
-        task.refresh_from_db()
-        assert str(task.due_date) == "2026-11-30"
     finally:
         call_command("migrate", verbosity=0)
+    # Later migrations (planning.0012) were unapplied on the way down, so the
+    # row is read back once the schema is current again.
+    task.refresh_from_db()
+    assert str(task.due_date) == "2026-11-30"
 
 
 @pytest.mark.django_db(transaction=True)
