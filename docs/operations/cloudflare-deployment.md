@@ -199,12 +199,15 @@ Drop the drill database afterwards. Never restore over the production database; 
 ## 7. Account setup (owner actions, about 45 minutes)
 
 Before starting:
-- Vercel deploys from GitHub. The code is on the branch `feature/cloudflare-deploy` (pushed 27 Nov 2026). It stacks on PR #5 and the Render work. Until PR #5 can be merged, deploy that branch (step D). Once everything is merged, switch Vercel's production branch back to `main`.
-- Generate two secrets on the laptop and keep them in your password manager:
+- Vercel deploys from GitHub. Everything is merged into `main` (PRs #5, #6 and #7 onward), so deploy `main`.
+- Generate the secrets on the laptop and keep them in your password manager:
 
 ```bash
 python3 -c 'import secrets; print(secrets.token_urlsafe(50))'   # DJANGO_SECRET_KEY
 python3 -c 'import secrets; print(secrets.token_urlsafe(48))'   # EDGE_PROXY_SECRET
+python3 -c 'import secrets; print(secrets.token_urlsafe(48))'   # CRON_SECRET (reminders)
+cd backend && ../.venv/bin/python manage.py generate_vapid_keys --settings=config.settings.test
+#   prints CHARITYOS_VAPID_PUBLIC_KEY and CHARITYOS_VAPID_PRIVATE_KEY (push notifications)
 ```
 
 ### A. Cloudflare: pick the address (5 min)
@@ -246,7 +249,7 @@ unset DATABASE_URL DJANGO_SECRET_KEY CHARITYOS_EDGE_PROXY_SECRET
 1. Sign up at [vercel.com](https://vercel.com/signup) on the **Hobby** plan with your GitHub account. Do not add a card.
 2. Choose **Add New → Project**, then import `charity-os`. Set:
    - **Root Directory: `backend`**;
-   - until the merges: Settings → Git → **Production Branch** `feature/cloudflare-deploy`;
+   - Settings → Git → **Production Branch** `main`;
    - framework: Django (detected from `manage.py`).
 3. Add these Environment Variables (Production):
 
@@ -259,6 +262,10 @@ unset DATABASE_URL DJANGO_SECRET_KEY CHARITYOS_EDGE_PROXY_SECRET
 | `DATABASE_URL` | Neon's **pooled** string with the `verify-full` ending |
 | `CHARITYOS_FRONTEND` | `external` |
 | `CHARITYOS_EDGE_PROXY_SECRET` | the generated edge secret |
+| `CHARITYOS_CRON_SECRET` | the generated cron secret |
+| `CHARITYOS_VAPID_PUBLIC_KEY` | from `generate_vapid_keys` (not secret) |
+| `CHARITYOS_VAPID_PRIVATE_KEY` | from `generate_vapid_keys` (**secret**) |
+| `CHARITYOS_VAPID_SUBJECT` | `https://charityos.<subdomain>.workers.dev` |
 
 4. Deploy. `backend/vercel.json` runs the function in Frankfurt (`fra1`), and Python comes from `backend/.python-version` (3.12).
 5. Check it. The health probe should answer `{"status": "ok", "database": "ok"}`, and anything else should be refused with `edge_only`:
@@ -277,9 +284,17 @@ npm ci
 npx wrangler login                                   # opens the browser once
 # Put the backend's address in wrangler.jsonc: "BACKEND_ORIGIN": "https://<project>.vercel.app"
 npx wrangler secret put EDGE_PROXY_SECRET            # paste the generated edge secret
-npm test                                             # 17 unit tests
+npx wrangler secret put CRON_SECRET                  # paste the generated cron secret
+npx wrangler kv namespace create REMINDERS_KV         # then paste its id into wrangler.jsonc
+#   (uncomment the "kv_namespaces" line). Optional but recommended: without it the
+#   cron calls the backend every minute and keeps Neon's free database awake.
+npm test                                             # 22 unit tests
 npm run deploy                                       # builds frontend/dist, then deploys
 ```
+
+The cron trigger (`* * * * *`) starts working on deploy. Check it in the Cloudflare
+dashboard → Workers → charityos → Logs, or send yourself a test notification from
+**Me → Reminders and calendar → Send a test**.
 
 ### F. Check the live site (10 min)
 | Check | How | Expected |
