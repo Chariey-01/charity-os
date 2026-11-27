@@ -11,7 +11,7 @@ import { useInstallPrompt } from "../../lib/pwa";
 import { isTaskDone } from "../../lib/taskStatus";
 
 const SUBPAGES: Record<string, string> = {
-  categories: "Categories",
+  categories: "Categories & workstreams",
   reminders: "Reminders",
   challenges: "Challenges",
   health: "Health log",
@@ -133,6 +133,16 @@ function slugify(value: string) {
   return value.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "category";
 }
 
+/** The same names as planning.categories.WORKSTREAMS (added by POST /areas/ensure-workstreams). */
+const WORKSTREAMS = [
+  "Learning and Education",
+  "Startup and Entrepreneurship",
+  "Client Work and Income",
+  "Career and Professional Development",
+  "Personal Development",
+  "Personal Administration",
+];
+
 function Categories() {
   const app = useApp();
   const [name, setName] = useState("");
@@ -151,8 +161,27 @@ function Categories() {
   }
 
   const archived = app.allAreas.filter((area) => area.archived_at);
+  const known = new Set(app.allAreas.map((area) => area.name.toLowerCase()));
+  const missingWorkstreams = WORKSTREAMS.filter((name) => !known.has(name.toLowerCase()));
   return (
     <>
+      <p className="hint">
+        Categories are your workstreams: tasks, activities and focus time are grouped by them. Rename, recolour or archive any of them.
+      </p>
+      {missingWorkstreams.length > 0 && (
+        <section className="panel">
+          <h2 className="panel-title">Suggested workstreams</h2>
+          <p className="hint">{missingWorkstreams.join(" · ")}</p>
+          <button
+            type="button"
+            className="button secondary"
+            disabled={!app.online}
+            onClick={() => run(() => post("/areas/ensure-workstreams"))}
+          >
+            Add {missingWorkstreams.length === WORKSTREAMS.length ? "the six" : `the ${missingWorkstreams.length} missing`} workstreams
+          </button>
+        </section>
+      )}
       {app.areas.length === 0 && (
         <EmptyState
           title="No categories yet"

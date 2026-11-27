@@ -1,0 +1,17 @@
+[project]
+name = "charityos-worker-probe"
+version = "0.0.0"
+requires-python = ">=3.12"
+dependencies = [
+  "django==5.2.6",
+  "djangorestframework==3.16.1",
+  "django-axes==9.1.0",
+  "psycopg[binary]==3.3.5",
+  "python-dotenv==1.1.1",
+  "whitenoise==6.12.0",
+  "cryptography==47.0.0",
+  "tzdata==2026.6",
+]
+
+[dependency-groups]
+dev = ["workers-py", "workers-runtime-sdk"]

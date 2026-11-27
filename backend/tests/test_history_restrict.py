@@ -13,6 +13,7 @@ from planning.models import Task
 from roadmaps.models import RoadmapNodePrerequisite
 from tests.history_graph import (
     OWNED_MODELS,
+    added_columns,
     build_history,
     owned_counts,
     table_rows,
@@ -170,7 +171,10 @@ def test_restrict_migrations_keep_old_shape_data_both_ways():
         build_history(owner, registry=old)
         before = table_rows(old)
 
-        assert table_rows(all_forward()) == before
+        forward = all_forward()
+        assert table_rows(forward, columns_from=old) == before
+        # Columns added since (planning.0011's due_date) hold nothing yet.
+        assert added_columns(forward, columns_from=old) == {"planning.Task": {(None,)}}
         for app, target in BEFORE_RESTRICT.items():
             reverted = apply([(app, target)])
         assert table_rows(reverted) == before

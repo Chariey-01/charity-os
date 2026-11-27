@@ -89,6 +89,50 @@ def ensure_default_categories(user, area_model=None):
         return created
 
 
+# The owner's six workstreams (overnight brief, 26 Nov 2026). Opt-in: added
+# by "Add suggested workstreams" in Profile or ``bootstrap_charityos
+# --with-workstreams``, never by migrations. They are ordinary categories:
+# rename, recolour, reorder or archive them like any other.
+WORKSTREAMS = (
+    ("Learning and Education", "#1D4ED8"),
+    ("Startup and Entrepreneurship", "#6A4C93"),
+    ("Client Work and Income", "#A0522D"),
+    ("Career and Professional Development", "#8C5E2A"),
+    ("Personal Development", "#B4536A"),
+    ("Personal Administration", "#57534E"),
+)
+
+
+def ensure_workstreams(user):
+    """Create the missing suggested workstreams; returns the created rows.
+
+    A name that already exists, active or archived (case-insensitive), is
+    left exactly as it is: an archived one stays archived.
+    """
+    from .models import Area
+
+    with transaction.atomic():
+        areas = list(Area.objects.select_for_update().filter(user=user))
+        names = {area.name.lower() for area in areas}
+        slugs = {area.slug for area in areas}
+        next_order = max((area.sort_order for area in areas), default=-1) + 1
+        created = []
+        for name, color in WORKSTREAMS:
+            if name.lower() in names:
+                continue
+            created.append(
+                Area.objects.create(
+                    user=user,
+                    name=name,
+                    slug=_unique_slug(slugs, name),
+                    color=color,
+                    sort_order=next_order,
+                )
+            )
+            next_order += 1
+        return created
+
+
 def active_categories(user):
     from .models import Area
 

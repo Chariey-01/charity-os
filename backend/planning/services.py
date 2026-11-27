@@ -155,6 +155,26 @@ def transition_task(*, user, task, target, reason=""):
     return task
 
 
+def record_due_change(*, user, task, previous):
+    """Append a due_changed event when ``task.due_date`` is not ``previous``.
+
+    Due dates are mutable, so a past week's workload can only be
+    reconstructed from these append-only events (planning/progress.py).
+    """
+    if previous == task.due_date:
+        return None
+    return PlanningEvent.objects.create(
+        user=user,
+        event_type=PlanningEvent.EventType.DUE_CHANGED,
+        task=task,
+        snapshot={
+            "title": task.title,
+            "from": previous.isoformat() if previous else None,
+            "to": task.due_date.isoformat() if task.due_date else None,
+        },
+    )
+
+
 @transaction.atomic
 def archive_task(*, user, task):
     """Hide a task from working views. Nothing is deleted.

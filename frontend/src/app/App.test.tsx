@@ -27,6 +27,17 @@ test("a locked-out sign-in shows the server's message, after fetching a CSRF tok
   expect(paths.indexOf("GET /auth/csrf")).toBeLessThan(paths.indexOf("POST /auth/login"));
 });
 
+test("an app opened offline retries by itself when the connection returns", async () => {
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("Failed to fetch"));
+  render(<App />);
+  expect(await screen.findByRole("alert")).toHaveTextContent(/offline/i);
+
+  fetchMock.mockResolvedValue(json({ detail: "x", error: { code: "not_authenticated", message: "x" } }, 403));
+  window.dispatchEvent(new Event("online"));
+
+  expect(await screen.findByRole("button", { name: "Sign in" })).toBeInTheDocument();
+});
+
 test("shows an offline state instead of the login form when the server is unreachable", async () => {
   vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("Failed to fetch"));
   render(<App />);
@@ -34,12 +45,12 @@ test("shows an offline state instead of the login form when the server is unreac
   expect(screen.queryByRole("button", { name: "Sign in" })).not.toBeInTheDocument();
 });
 
-test("mobile navigation exposes the five primary sections", async () => {
+test("mobile navigation exposes the six primary sections", async () => {
   mockApi({ "/schedule/day": day([entry()]) });
   render(<App />);
   const nav = await screen.findByRole("navigation", { name: "Primary" });
   const links = within(nav).getAllByRole("link");
-  expect(links.map((link) => link.textContent)).toEqual(["Today", "Schedule", "Roadmaps", "Insights", "Profile"]);
+  expect(links.map((link) => link.textContent)).toEqual(["Today", "Tasks", "Schedule", "Roadmaps", "Insights", "Profile"]);
   expect(within(nav).getByRole("link", { name: "Today" })).toHaveAttribute("aria-current", "page");
 
   fireEvent.click(within(nav).getByRole("link", { name: "Schedule" }));

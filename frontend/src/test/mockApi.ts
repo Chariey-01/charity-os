@@ -1,6 +1,6 @@
 import { vi } from "vitest";
 
-import type { Area, DayPayload, Entry, Preferences, User } from "../lib/types";
+import type { Area, DayPayload, Entry, Preferences, Progress, User } from "../lib/types";
 
 export const NOW = new Date("2026-11-24T10:00:00Z");
 export const TODAY = "2026-11-24";
@@ -126,6 +126,31 @@ export function day(entries: Entry[] = [], overrides: Partial<DayPayload> = {}):
   };
 }
 
+const weekly = { planned: 0, completed: 0, outstanding: 0, completion_percent: null, unplanned_completed: 0, completed_total: 0 };
+
+/** A GET /progress body; tests override the parts they care about. */
+export function progress(overrides: Partial<Progress> = {}): Progress {
+  return {
+    today: TODAY,
+    week: { start: "2026-11-23", end: "2026-11-29", is_current: true, is_future: false, as_of: `${TODAY}T09:00:00Z` },
+    overall: { completed: 0, remaining: 0, overdue: 0, due_today: 0, completion_percent: null },
+    weekly: { ...weekly, previous: { ...weekly } },
+    workstreams: { completed_tasks: [], time: [] },
+    tasks: { planned: [], completed: [] },
+    accomplishments: {
+      completed_tasks: [],
+      milestones: [],
+      focus_minutes: 0,
+      focus_sessions: 0,
+      roadmaps_advanced: [],
+      learning: { roadmap_items_completed: 0, roadmap_tasks_completed: 0 },
+      evidence_recorded: 0,
+      accomplishments: [],
+    },
+    ...overrides,
+  };
+}
+
 type Call = { method: string; path: string; search: string; body: Record<string, unknown> | undefined };
 type Handler = unknown | ((call: Call) => unknown);
 
@@ -141,6 +166,7 @@ export function mockApi(routes: Record<string, Handler> = {}) {
     "/preferences": prefs,
     "/sessions/active": undefined,
     "/schedule/day": day(),
+    "/progress": progress(),
     ...routes,
   };
   const spy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {

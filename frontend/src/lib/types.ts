@@ -166,13 +166,80 @@ export type Challenge = {
   phase: string;
 };
 
+export type TaskStatus = "backlog" | "todo" | "in_progress" | "in_review" | "blocked" | "done" | "cancelled";
+
 export type Task = {
   id: string;
   title: string;
-  status: string;
+  description?: string;
+  status: TaskStatus | string;
   area?: string | null;
   roadmap_item?: string | null;
+  priority?: number;
+  due_date?: string | null;
+  estimated_minutes?: number | null;
+  completed_at?: string | null;
+  archived_at?: string | null;
+  created_at?: string;
   is_deep_work_default: boolean;
+};
+
+export type ProgressTask = {
+  id: string;
+  title: string;
+  area: string | null;
+  label: string;
+  color: string;
+  due_date: string | null;
+  status: string;
+  status_now: string;
+  archived_now: boolean;
+  planned: boolean;
+  completed_on: string | null;
+};
+
+export type WeeklyNumbers = {
+  planned: number;
+  completed: number;
+  outstanding: number;
+  completion_percent: number | null;
+  unplanned_completed: number;
+  completed_total: number;
+};
+
+export type Progress = {
+  today: string;
+  week: { start: string; end: string; is_current: boolean; is_future: boolean; as_of: string };
+  overall: { completed: number; remaining: number; overdue: number; due_today: number; completion_percent: number | null };
+  weekly: WeeklyNumbers & { previous: WeeklyNumbers };
+  workstreams: {
+    completed_tasks: { area: string | null; label: string; color: string; count: number }[];
+    time: { area: string | null; label: string; color: string; actual_minutes: number }[];
+  };
+  tasks: { planned: ProgressTask[]; completed: ProgressTask[] };
+  accomplishments: {
+    completed_tasks: ProgressTask[];
+    milestones: { id: string; title: string; kind: string; roadmap: string; completed_on: string }[];
+    focus_minutes: number;
+    focus_sessions: number;
+    roadmaps_advanced: string[];
+    learning: { roadmap_items_completed: number; roadmap_tasks_completed: number };
+    evidence_recorded: number;
+    accomplishments: { id: string; title: string; local_date: string }[];
+  };
+};
+
+export type WeeklyReview = {
+  id: string;
+  week_start_date: string;
+  week_end_date: string;
+  timezone_name: string;
+  wins: string;
+  lessons: string;
+  next_week: string;
+  closed_at: string | null;
+  archived_at: string | null;
+  version: number;
 };
 
 export type DayStats = {

@@ -299,3 +299,30 @@ Emails are masked (`o***@example.com`) and IP addresses cut to /24 (IPv4) or /48
 
 **Erasure.** `erase_user` also removes the account's sign-in sessions, listed as `sessions.Session` in the dry run.
 
+
+## Daily operations (implemented, branch `feature/daily-operations`)
+
+**Tasks.**
+- `due_date` (optional date). Every change appends a `due_changed` PlanningEvent `{title, from, to}`; dates are ISO strings or `null`.
+- `GET /tasks` filters: `status` (`open`, or workflow names, comma-separated; an unknown name is a 400), `area` (category id) and `completed_since` (a local date; tasks that are not done always pass). Detail routes ignore filters.
+- Only `title` is required on create.
+
+**`GET /progress?week=<any date in the week>`** (default: this week; an invalid date is a 400). Definitions are in `backend/planning/progress.py`:
+
+| Key | Meaning |
+|---|---|
+| `week` | `start`, `end` (the user's `week_starts_on`), `is_current`, `is_future`, `as_of` (the week's end, or now for the current week) |
+| `overall` | Active (unarchived) tasks: `completed`, `remaining` (open), `overdue` (open, due before today), `due_today`, `completion_percent` = completed / (completed + remaining), or `null` with none |
+| `weekly` | The week's **planned workload**, as of `as_of`: tasks due in the week, scheduled in the week (entry not cancelled or moved away by then) or on a daily plan in the week (not carried over or removed by then), excluding cancelled, archived and already-done-before-the-week tasks, each counted once. `planned`, `completed` (planned and done in the week), `outstanding`, `completion_percent` (`null` when nothing was planned), `unplanned_completed`, `completed_total`, and the same for `previous` |
+| `workstreams` | `completed_tasks`: completed-in-week tasks per category (the task's current category). `time`: tracked minutes per category, the same computation as `/insights` |
+| `tasks` | `planned` and `completed` task summaries: status at `as_of` and now, due date at `as_of`, completion day |
+| `accomplishments` | Completed tasks, roadmap nodes completed in the week, focus minutes and sessions, roadmaps advanced, learning counts, evidence recorded and accomplishments dated in the week |
+
+A past week is judged as it stood at its end. Later completions, reopenings, deferrals or archiving never change it.
+
+**`POST /areas/ensure-workstreams`.** Adds any missing suggested workstreams (`planning.categories.WORKSTREAMS`) as categories and returns `{created, areas}`. Existing names, active or archived, are left unchanged. `bootstrap_charityos --with-workstreams` does the same for a new account.
+
+**Authentication errors.**
+- An unauthenticated request carries `error.code: "not_authenticated"`. The status is unchanged: 403 with session authentication.
+- A CSRF rejection is `error.code: "csrf_failed"`, with Django's reason in `error.reason`. It is also logged as `reason=` on the `csrf_rejected` security event.
+- The bundled client returns to sign-in only on `not_authenticated`. On `csrf_failed` it refreshes the token and resends once.

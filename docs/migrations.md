@@ -98,3 +98,10 @@ Verified:
 - **`api.0001`:** `tests/test_idempotency_migration.py` checks that the SQL only creates its own table, and that forward, back and forward again leave every other table's rows unchanged.
 - **The restore drill** (`--migrate`) applies, reverses and re-applies all of these on a copy of `charityos_acceptance`, with every row identical after the reversal.
 
+## Daily operations (branch `feature/daily-operations`)
+
+| Migration | Depends on | Effect | Reversible | Rollback notes |
+|---|---|---|---|---|
+| `planning.0011_task_due_date` | `planning.0010` | Adds nullable `planning_task.due_date`. Adds `due_changed` to the `PlanningEvent` choices (state only; there is no DB constraint on event types) | **Refuses while any due date exists** | The reverse drops the column, so it refuses while any task has a due date (clear them deliberately, after a backup); `due_changed` events remain. The parked `feature/project-domain` adds the same field (same definition) in its own `planning.0009`. When integrating it, drop that `AddField` (or make it state-only) and renumber its `planning.0009`/`0010` after `0011`. |
+
+Tested by `tests/test_task_due_dates.py::test_the_migration_round_trips`, by `test_history_restrict` (old-shape rows unchanged; the new column NULL), and by the restore drill on a copy of `charityos_acceptance`.

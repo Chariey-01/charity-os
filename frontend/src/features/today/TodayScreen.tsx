@@ -3,10 +3,13 @@ import { useEffect, useRef, useState } from "react";
 import { useApp } from "../../app/context";
 import { EmptyState, ErrorState, Icon, Loading, Meter, ProgressRing, Segmented } from "../../components/ui";
 import { api, post } from "../../lib/api";
+import { formatMinutes } from "../../lib/format";
+import { isOpen } from "../../lib/tasks";
 import { clock, durationLabel, formatDate, formatTime, relativeMinutes, zoned } from "../../lib/time";
-import type { DayPayload, Entry, Preferences } from "../../lib/types";
+import type { DayPayload, Entry, Preferences, Progress, Task } from "../../lib/types";
 import { useEntryCommand, useLiveSeconds } from "../schedule/hooks";
 import { DayGrid, EntryList, TimelineList } from "../schedule/views";
+import { QuickCapture, TaskRow } from "../tasks/TasksScreen";
 
 type View = Preferences["default_today_view"];
 
@@ -110,6 +113,10 @@ export function TodayScreen() {
           )}
         </div>
       </section>
+
+      <QuickCapture />
+      <TodayTasks />
+      <TaskProgressCard />
 
       {current.map((entry) => (
         <CurrentCard key={entry.id} entry={entry} />
@@ -307,7 +314,7 @@ function WeekStrip({ data }: { data: DayPayload }) {
   return (
     <section className="week-strip" aria-label="This week">
       <div>
-        <p className="eyebrow">This week</p>
+        <p className="eyebrow">Activities this week</p>
         <b>
           {week.completed} done · {week.active_days} active {week.active_days === 1 ? "day" : "days"}
         </b>
@@ -324,5 +331,97 @@ function WeekStrip({ data }: { data: DayPayload }) {
         <p className="streak">{week.streak_weeks}-week rhythm (3+ active days a week)</p>
       )}
     </section>
+  );
+}
+
+/** What needs doing today: overdue, due today, in progress and high-priority tasks. */
+function TodayTasks() {
+  const app = useApp();
+  const [tasks, setTasks] = useState<Task[] | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    api<Task[]>("/tasks?status=open")
+      .then((value) => {
+        if (!alive) return;
+        setTasks(Array.isArray(value) ? value : []);
+        setFailed(false);
+      })
+      .catch(() => alive && setFailed(true));
+    return () => {
+      alive = false;
+    };
+  }, [app.dataVersion]);
+
+  if (failed && !tasks) return <p className="hint">Tasks could not be loaded. Pull to refresh or open Tasks.</p>;
+  if (!tasks) return null;
+  const open = tasks.filter(isOpen);
+  const rank = (task: Task) =>
+    task.due_date && task.due_date < app.today ? 0 : task.due_date === app.today ? 1 : task.status === "in_progress" ? 2 : 3;
+  const focus = open
+    .filter((task) => rank(task) < 3 || (task.priority ?? 0) >= 3)
+    .sort((a, b) => rank(a) - rank(b) || (b.priority ?? 0) - (a.priority ?? 0) || (a.due_date ?? "").localeCompare(b.due_date ?? ""));
+  const overdue = open.filter((task) => task.due_date && task.due_date < app.today).length;
+  const shown = focus.slice(0, 6);
+
+  return (
+    <section className="panel today-tasks" aria-labelledby="today-tasks-title">
+      <div className="group-head">
+        <h2 id="today-tasks-title" className="panel-title">Tasks for today</h2>
+        <a className="text-button small" href="#/tasks">All tasks ({open.length})</a>
+      </div>
+      {overdue > 0 && <p className="hint overdue">{overdue} overdue</p>}
+      {shown.length ? (
+        <ul className="task-rows">
+          {shown.map((task) => (
+            <TaskRow key={task.id} task={task} />
+          ))}
+        </ul>
+      ) : (
+        <p className="hint">
+          {open.length ? "Nothing due today, overdue or in progress." : "No open tasks. Capture one above when something comes up."}
+        </p>
+      )}
+      {focus.length > shown.length && <p className="hint">and {focus.length - shown.length} more on the Tasks tab.</p>}
+    </section>
+  );
+}
+
+/** This week's task progress in one line, with the figures behind it. */
+function TaskProgressCard() {
+  const app = useApp();
+  const [data, setData] = useState<Progress | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    api<Progress>("/progress")
+      .then((value) => alive && setData(value && typeof value === "object" && "weekly" in value ? value : null))
+      .catch(() => alive && setData(null));
+    return () => {
+      alive = false;
+    };
+  }, [app.dataVersion]);
+
+  if (!data) return null;
+  const { weekly, accomplishments } = data;
+  return (
+    <a className="panel progress-card" href="#/insights" aria-label="Tasks this week. Open weekly progress.">
+      <p className="eyebrow">Tasks this week</p>
+      {weekly.planned ? (
+        <>
+          <b>
+            {weekly.completion_percent}% · {weekly.completed} of {weekly.planned} planned done
+          </b>
+          <Meter value={weekly.completed} max={weekly.planned} label="Planned tasks completed this week" />
+        </>
+      ) : (
+        <b>No tasks planned for this week yet</b>
+      )}
+      <small>
+        {weekly.completed_total} completed · {formatMinutes(accomplishments.focus_minutes)} focus
+        {data.overall.overdue ? ` · ${data.overall.overdue} overdue` : ""}
+      </small>
+    </a>
   );
 }

@@ -1,10 +1,17 @@
+import re
 from collections import Counter
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError
 from django.db.models import ProtectedError, RestrictedError
-from rest_framework.exceptions import APIException, MethodNotAllowed, PermissionDenied
+from rest_framework.exceptions import (
+    APIException,
+    AuthenticationFailed,
+    MethodNotAllowed,
+    NotAuthenticated,
+    PermissionDenied,
+)
 from rest_framework.response import Response
 from rest_framework.views import exception_handler as drf_exception_handler
 
@@ -40,8 +47,21 @@ def _blocking(objects):
     return [{"model": name, "count": count} for name, count in sorted(counts.items())]
 
 
+def _is_csrf_rejection(exc):
+    return isinstance(exc, PermissionDenied) and str(exc.detail).startswith(
+        "CSRF Failed"
+    )
+
+
+def _csrf_reason(exc):
+    """Django's reason ("CSRF token missing.", "Origin checking failed - ..."),
+    printable ASCII only and capped: it can quote the client's Origin header."""
+    text = str(exc.detail).removeprefix("CSRF Failed: ")
+    return re.sub(r"[^\x20-\x7e]", "?", text).replace('"', "'")[:200]
+
+
 def _log_csrf_rejection(exc, context):
-    if isinstance(exc, PermissionDenied) and str(exc.detail).startswith("CSRF Failed"):
+    if _is_csrf_rejection(exc):
         import logging
 
         from config.security import security_event
@@ -51,6 +71,7 @@ def _log_csrf_rejection(exc, context):
             "csrf_rejected",
             request=getattr(request, "_request", request),
             method=getattr(request, "method", None),
+            reason=f'"{_csrf_reason(exc)}"',
             level=logging.WARNING,
         )
 
@@ -112,6 +133,22 @@ def exception_handler(exc, context):
             exc.default_code,
             str(exc.detail),
             **getattr(exc, "extra", {}),
+        )
+    # Clients must tell "signed out" apart from "not allowed": an expired
+    # session sends the user to sign in, a CSRF or permission failure does not.
+    if isinstance(exc, (NotAuthenticated, AuthenticationFailed)):
+        response = drf_exception_handler(exc, context)
+        response.data = {
+            "detail": str(exc.detail),
+            "error": {"code": "not_authenticated", "message": str(exc.detail)},
+        }
+        return response
+    if _is_csrf_rejection(exc):
+        return _error(
+            403,
+            "csrf_failed",
+            "Your security token is missing or out of date. Reload and try again.",
+            reason=_csrf_reason(exc),
         )
     request = context.get("request")
     instead = getattr(context.get("view"), "delete_instead", None)

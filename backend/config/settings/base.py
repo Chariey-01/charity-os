@@ -36,6 +36,11 @@ INSTALLED_APPS = [
     "scheduling",
 ]
 MIDDLEWARE = [
+    # First: answers the platform health probe before host and HTTPS checks.
+    "config.health_probe.HealthProbeMiddleware",
+    # Off unless CHARITYOS_EDGE_PROXY_SECRET is set: then only requests from
+    # CharityOS's Cloudflare Worker are answered (config/edge_proxy.py).
+    "config.edge_proxy.EdgeProxyMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -74,6 +79,9 @@ CHARITYOS_TRUSTED_PROXIES = parse_trusted_proxies(
     os.environ.get("CHARITYOS_TRUSTED_PROXIES", "")
 )
 AXES_CLIENT_IP_CALLABLE = "config.proxies.axes_client_ip"
+# Shared with the Cloudflare Worker when the backend runs on its own host
+# (config/edge_proxy.py, docs/operations/cloudflare-deployment.md).
+CHARITYOS_EDGE_PROXY_SECRET = os.environ.get("CHARITYOS_EDGE_PROXY_SECRET", "")
 ROOT_URLCONF = "config.urls"
 TEMPLATES = [
     {
@@ -129,17 +137,40 @@ SILENCED_SYSTEM_CHECKS = ["auth.E003", "auth.W004"]
 # Security events (Phase 0C, S12): one line each on stderr, which the process
 # manager or platform collects. Emails are masked and IPs truncated by
 # config.security; nothing secret is ever passed to this logger.
+#
+# Server errors (unhandled exceptions, DisallowedHost and other
+# django.security errors): one redacted line plus traceback each on stderr
+# (config/error_logging.py). Without this, DEBUG = False wrote them nowhere.
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
     "formatters": {
-        "security": {"format": "%(asctime)s %(levelname)s %(name)s %(message)s"}
+        "security": {"format": "%(asctime)s %(levelname)s %(name)s %(message)s"},
+        "errors": {
+            "()": "config.error_logging.RedactingFormatter",
+            "format": "%(asctime)s %(levelname)s %(name)s %(message)s",
+        },
     },
     "handlers": {
-        "security": {"class": "logging.StreamHandler", "formatter": "security"}
+        "security": {"class": "logging.StreamHandler", "formatter": "security"},
+        "errors": {
+            "class": "logging.StreamHandler",
+            "formatter": "errors",
+            "level": "ERROR",
+        },
     },
     "loggers": {
         "charityos.security": {"handlers": ["security"], "level": "INFO"},
+        "django.request": {
+            "handlers": ["errors"],
+            "level": "ERROR",
+            "propagate": False,
+        },
+        "django.security": {
+            "handlers": ["errors"],
+            "level": "ERROR",
+            "propagate": False,
+        },
     },
 }
 

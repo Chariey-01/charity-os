@@ -22,19 +22,19 @@ Sections 1–3 come from reading the code on `integration/phase-0`. Section 4 mu
 | Sessions | `config/settings/base.py` | Cookie session, `HttpOnly`, `SameSite=Lax`, `Secure` in production. Django's default lifetime is 2 weeks. |
 | Reminders | README "Reminders and installation" | Foreground only. A PWA cannot wake itself without Web Push, and Web Push is not implemented. |
 
-## 2. Fix before the install test
+## 2. Fix before the install test: done on `feature/daily-operations`
 
 | ID | Severity | Finding | Fix |
 |---|---|---|---|
-| SW1 | Medium | The page handler in `sw.js` stores **every** page response as the offline shell, without checking `response.ok`. A 502 from the proxy during a redeploy, or a 404 page, would replace the offline shell, and the app would then open offline to an error page. | Cache only when `response.ok` is true. This is a one-line change; test it with an offline launch after a deliberate 502. |
-| AU1 | Low (for personal use) | When a session expires while the app is open, API calls return 403 and each screen shows an error toast. The app returns to sign-in only after a reload. | Handle 401 and 403 "not authenticated" in one place in `src/lib/api.ts`, and switch to the sign-in screen. |
+| SW1 | Medium, **fixed** | The page handler in `sw.js` stored **every** page response as the offline shell, without checking `response.ok`. A 502 from the proxy during a redeploy, or a 404 page, would replace the offline shell, and the app would then open offline to an error page. | Cache only when `response.ok` is true. This is a one-line change; test it with an offline launch after a deliberate 502. |
+| AU1 | Low, **fixed** | When a session expired while the app was open, API calls return 403 and each screen shows an error toast. The app returns to sign-in only after a reload. | Handle 401 and 403 "not authenticated" in one place in `src/lib/api.ts`, and switch to the sign-in screen. |
 
-## 3. Worth doing; not blocking a personal install
+## 3. Worth doing; SW2 and SW3 fixed on `feature/daily-operations`
 
 | ID | Finding | Suggestion |
 |---|---|---|
-| SW2 | The cache name `charityos-shell-v1` never changes, so old hashed assets pile up across deploys. | Delete `/assets/` entries the current `index.html` no longer references, or include the build hash in the cache name. |
-| SW3 | On the very first visit, the page's assets load before the worker takes control, so they are not cached. Offline works from the second launch. | Accept this, or pre-cache the build's asset list. Test step 4.3 accounts for it. |
+| SW2 (**fixed**) | The cache name `charityos-shell-v1` never changes, so old hashed assets pile up across deploys. | Delete `/assets/` entries the current `index.html` no longer references, or include the build hash in the cache name. |
+| SW3 (**fixed**) | On the very first visit, the page's assets load before the worker takes control, so they are not cached. Offline works from the second launch. | Accept this, or pre-cache the build's asset list. Test step 4.3 accounts for it. |
 | HD1 | The server's headers decide how quickly updates reach the phone. | Serve `index.html`, `sw.js` and `manifest.webmanifest` with `Cache-Control: no-cache`, `/assets/*` with `Cache-Control: public, max-age=31536000, immutable`, and `sw.js` as `text/javascript`. |
 | HS1 | `SECURE_HSTS_INCLUDE_SUBDOMAINS` and `SECURE_HSTS_PRELOAD` are hard to undo. | Use a dedicated domain or subdomain. Do not submit the domain to the browser preload list until the setup is stable. |
 
@@ -57,3 +57,9 @@ Use Chrome on a real Android phone, against the HTTPS address. Record the phone 
 | 4.11 | Uninstall | It uninstalls cleanly. Data stays on the server. |
 
 **The app is "downloadable" only after 4.1–4.5 pass on a deployed HTTPS site.**
+
+## 5. Status after `feature/daily-operations` (26 Nov 2026)
+
+- **SW1–SW3 fixed.** The worker keeps the last complete shell: only successful responses are cached, a new `index.html` is adopted only once all its assets have loaded, error pages and failed loads fall back to the last good shell, old assets are pruned, and install pre-caches the shell's assets. Tested in `frontend/src/sw.test.ts` and in a real Chrome run: offline launch, then automatic recovery when back online.
+- **AU1 fixed.** An ended session returns to sign-in with an explanation, without a reload. A rejected CSRF token is refreshed and retried, never treated as a sign-out.
+- **Still not installable.** Nothing is deployed over HTTPS, and no Android install test has been run.

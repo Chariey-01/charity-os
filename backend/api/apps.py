@@ -6,6 +6,7 @@ class ApiConfig(AppConfig):
     name = "api"
 
     def ready(self):
+        import config.frontend  # noqa: F401  registers the deploy check
         from config.security import connect_signals
 
         connect_signals()

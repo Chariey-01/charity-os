@@ -1,6 +1,6 @@
 import { createContext, useContext } from "react";
 
-import type { Area, Entry, Preferences, QuickAddDefaults, Session, User } from "../lib/types";
+import type { Area, Entry, Preferences, QuickAddDefaults, Session, Task, User } from "../lib/types";
 
 export type ToastKind = "info" | "success" | "error";
 
@@ -21,6 +21,8 @@ export type AppContextValue = {
   celebrate: (title: string, detail?: string) => void;
   openQuickAdd: (defaults?: QuickAddDefaults) => void;
   openEntry: (entry: Entry | string, mode?: EntrySheetMode) => void;
+  /** Open a task (an id) or, with null, the new-task form with optional defaults. */
+  openTask: (task: string | null, defaults?: Partial<Task>) => void;
   navigate: (hash: string) => void;
   logout: () => Promise<void>;
 };
@@ -49,6 +51,13 @@ const FOCUS_SLUGS = new Set([
   "career",
   "ai",
   "reading",
+  // The suggested workstreams (planning.categories.WORKSTREAMS), except
+  // Personal Administration, which is mostly errands and admin.
+  "learning-and-education",
+  "startup-and-entrepreneurship",
+  "client-work-and-income",
+  "career-and-professional-development",
+  "personal-development",
 ]);
 
 export function defaultsToFocus(area: Area | undefined) {
