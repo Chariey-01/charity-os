@@ -104,32 +104,73 @@ def test_list_filters(client, user):
     assert titles(f"completed_since={since}") == ["Blocked", "Done today", "Open"]
     assert client.get("/api/v1/tasks?status=finished").status_code == 400
     assert client.get("/api/v1/tasks?completed_since=yesterday").status_code == 400
+    assert client.get("/api/v1/tasks?area=not-a-uuid").status_code == 400
     assert client.get(f"/api/v1/tasks/{old_done['id']}?status=open").status_code == 200
 
 
-@pytest.mark.django_db(transaction=True)
-def test_the_migration_round_trips(user):
-    task = Task.objects.create(user=user, title="Keep me", due_date="2026-11-30")
-    PlanningEvent.objects.create(
-        user=user,
-        task=task,
-        event_type="due_changed",
-        snapshot={"from": None, "to": "2026-11-30"},
-    )
-    before = Task.objects.values("id", "title", "status").get(pk=task.pk)
-    try:
-        MigrationExecutor(connection).migrate(
-            [("planning", "0010_restrict_history_deletes")]
+def due_date_column_exists():
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT count(*) FROM information_schema.columns "
+            "WHERE table_name = 'planning_task' AND column_name = 'due_date'"
         )
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT count(*) FROM information_schema.columns "
-                "WHERE table_name = 'planning_task' AND column_name = 'due_date'"
-            )
-            assert cursor.fetchone()[0] == 0
+        return cursor.fetchone()[0] == 1
+
+
+def migrate_planning(target):
+    MigrationExecutor(connection).migrate([("planning", target)])
+    return (
+        MigrationExecutor(connection)
+        ._create_project_state(with_applied_migrations=True)
+        .apps
+    )
+
+
+@pytest.mark.django_db(transaction=True)
+def test_reversing_is_refused_while_due_dates_exist(user):
+    task = Task.objects.create(user=user, title="Keep me", due_date="2026-11-30")
+    try:
+        with pytest.raises(RuntimeError, match="1 task\\(s\\) have a due date"):
+            migrate_planning("0010_restrict_history_deletes")
+        assert due_date_column_exists()
+        task.refresh_from_db()
+        assert str(task.due_date) == "2026-11-30"
     finally:
         call_command("migrate", verbosity=0)
-    task.refresh_from_db()
-    assert Task.objects.values("id", "title", "status").get(pk=task.pk) == before
-    assert task.due_date is None  # the column was dropped and re-added
-    assert PlanningEvent.objects.filter(event_type="due_changed").count() == 1
+
+
+@pytest.mark.django_db(transaction=True)
+def test_existing_tasks_get_no_invented_due_date_and_the_migration_round_trips(user):
+    try:
+        old = migrate_planning("0010_restrict_history_deletes")
+        assert not due_date_column_exists()
+        OldTask = old.get_model("planning", "Task")
+        legacy = OldTask.objects.create(
+            user_id=user.pk,
+            title="Old task",
+            status="todo",
+            priority=2,
+            estimated_minutes=45,
+        )
+        before = OldTask.objects.values(
+            "id", "title", "status", "priority", "estimated_minutes", "created_at"
+        ).get(pk=legacy.pk)
+
+        call_command("migrate", verbosity=0)
+        after = Task.objects.values(
+            "id",
+            "title",
+            "status",
+            "priority",
+            "estimated_minutes",
+            "created_at",
+            "due_date",
+        ).get(pk=legacy.pk)
+        assert after.pop("due_date") is None
+        assert after == before
+
+        migrate_planning("0010_restrict_history_deletes")  # no due dates: allowed
+        assert not due_date_column_exists()
+    finally:
+        call_command("migrate", verbosity=0)
+    assert Task.objects.filter(pk=legacy.pk, due_date__isnull=True).exists()

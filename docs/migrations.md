@@ -102,6 +102,6 @@ Verified:
 
 | Migration | Depends on | Effect | Reversible | Rollback notes |
 |---|---|---|---|---|
-| `planning.0011_task_due_date` | `planning.0010` | Adds nullable `planning_task.due_date`. Adds `due_changed` to the `PlanningEvent` choices (state only; there is no DB constraint on event types) | Yes | The reverse drops the column, so due dates are lost; their `due_changed` events remain. The parked `feature/project-domain` adds the same field (same definition) in its own `planning.0009`. When integrating it, drop that `AddField` (or make it state-only) and renumber its `planning.0009`/`0010` after `0011`. |
+| `planning.0011_task_due_date` | `planning.0010` | Adds nullable `planning_task.due_date`. Adds `due_changed` to the `PlanningEvent` choices (state only; there is no DB constraint on event types) | **Refuses while any due date exists** | The reverse drops the column, so it refuses while any task has a due date (clear them deliberately, after a backup); `due_changed` events remain. The parked `feature/project-domain` adds the same field (same definition) in its own `planning.0009`. When integrating it, drop that `AddField` (or make it state-only) and renumber its `planning.0009`/`0010` after `0011`. |
 
 Tested by `tests/test_task_due_dates.py::test_the_migration_round_trips`, by `test_history_restrict` (old-shape rows unchanged; the new column NULL), and by the restore drill on a copy of `charityos_acceptance`.

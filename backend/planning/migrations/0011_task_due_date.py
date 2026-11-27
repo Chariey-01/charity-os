@@ -3,6 +3,20 @@
 from django.db import migrations, models
 
 
+def refuse_if_due_dates(apps, schema_editor):
+    """Reversing drops due_date, which would silently lose every due date."""
+    count = (
+        apps.get_model("planning", "Task")
+        .objects.filter(due_date__isnull=False)
+        .count()
+    )
+    if count:
+        raise RuntimeError(
+            f"Refusing to reverse planning.0011: {count} task(s) have a due date "
+            "that would be lost. Take a backup and clear them deliberately first."
+        )
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -20,4 +34,6 @@ class Migration(migrations.Migration):
             name='event_type',
             field=models.CharField(choices=[('planned', 'Planned'), ('carried_over', 'Carried over'), ('removed', 'Removed'), ('completed', 'Completed'), ('skipped', 'Skipped'), ('reopened', 'Reopened'), ('status_changed', 'Status changed'), ('archived', 'Archived'), ('restored', 'Restored'), ('due_changed', 'Due date changed')], max_length=20),
         ),
+        # Runs first when reversing: nothing is dropped while due dates exist.
+        migrations.RunPython(migrations.RunPython.noop, refuse_if_due_dates),
     ]
