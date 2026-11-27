@@ -9,6 +9,7 @@ import { JourneyScreen } from "../features/journey/JourneyScreen";
 import { MeScreen } from "../features/me/MeScreen";
 import { PlanScreen } from "../features/plan/PlanScreen";
 import { ProjectsScreen } from "../features/projects/ProjectsScreen";
+import { RemindersScreen } from "../features/reminders/RemindersScreen";
 import { ProfileScreen } from "../features/profile/ProfileScreen";
 import { RoadmapsScreen } from "../features/roadmaps/RoadmapsScreen";
 import { EntrySheet } from "../features/schedule/EntrySheet";
@@ -286,6 +287,7 @@ function Shell({ user, setUser }: { user: User; setUser: (user: User | null) => 
     journey: () => <JourneyScreen />,
     insights: () => <InsightsScreen route={route} />,
     profile: () => <ProfileScreen route={route} />,
+    reminders: () => <RemindersScreen route={route} />,
   };
   const screen = (screens[screenName] ?? (() => <TodayScreen key={prefs.default_today_view} />))();
 

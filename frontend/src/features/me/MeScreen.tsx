@@ -4,6 +4,7 @@ import { Icon, ScreenHead } from "../../components/ui";
 const LINKS = [
   { href: "#/journey", icon: "journey", title: "My Journey", body: "Your permanent record: achievements, learning, decisions, by year." },
   { href: "#/insights", icon: "insights", title: "Insights", body: "Where your time went, what moved forward, what keeps slipping." },
+  { href: "#/reminders", icon: "bell", title: "Reminders and calendar", body: "Phone notifications, reminders, and your plan in Google Calendar." },
   { href: "#/profile", icon: "profile", title: "Settings", body: "Reminders, notifications, calendar, categories, account." },
 ];
 

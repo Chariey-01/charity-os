@@ -30,6 +30,18 @@
   },
   // EDGE_PROXY_SECRET is a secret: `npx wrangler secret put EDGE_PROXY_SECRET`.
   // For `wrangler dev`, put both values in .dev.vars (git-ignored).
+  // Server-side reminders: every minute the Worker checks whether a reminder
+  // is due and, only then, asks the backend to send it (src/scheduler.js).
+  // Workers Free allows 5 cron triggers per account.
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
+  // Optional but recommended: lets the cron skip the backend when nothing is
+  // due, so the database can sleep. Create it with
+  // `npx wrangler kv namespace create REMINDERS_KV` and paste the id here.
+  // "kv_namespaces": [{ "binding": "REMINDERS_KV", "id": "<namespace id>" }],
+  // CRON_SECRET is a secret too: `npx wrangler secret put CRON_SECRET`, the
+  // same value as the backend's CHARITYOS_CRON_SECRET.
   "observability": {
     "enabled": true
   }

@@ -6,14 +6,13 @@ import { CategoryDot, EmptyState, ErrorState, Icon, Loading, Switch } from "../.
 import { api, patch, post } from "../../lib/api";
 import { canNotify, notificationPermission, requestNotificationPermission } from "../../lib/reminders";
 import { actualLabel, addDays, deviceTimezone, durationLabel, instantFrom, weekStart } from "../../lib/time";
-import type { Area, Challenge, Preferences, Task, User } from "../../lib/types";
+import type { Area, Preferences, Task, User } from "../../lib/types";
 import { useInstallPrompt } from "../../lib/pwa";
 import { isTaskDone } from "../../lib/taskStatus";
 
 const SUBPAGES: Record<string, string> = {
   categories: "Categories & workstreams",
   reminders: "Reminders",
-  challenges: "Challenges",
   health: "Health log",
   reflect: "Reflection",
   history: "History",
@@ -32,7 +31,6 @@ export function ProfileScreen({ route }: { route: Route }) {
         </header>
         {sub === "categories" && <Categories />}
         {sub === "reminders" && <Reminders />}
-        {sub === "challenges" && <Challenges />}
         {sub === "health" && <HealthLog />}
         {sub === "reflect" && <Reflect />}
         {sub === "history" && <History />}
@@ -372,75 +370,6 @@ function Reminders() {
           </label>
         </div>
       </section>
-    </>
-  );
-}
-
-function Challenges() {
-  const app = useApp();
-  const [challenges, setChallenges] = useState<Challenge[] | null>(null);
-  const [name, setName] = useState("");
-  const [start, setStart] = useState(app.today);
-  const [end, setEnd] = useState(addDays(app.today, 95));
-  const [error, setError] = useState("");
-  const [version, setVersion] = useState(0);
-
-  useEffect(() => {
-    api<Challenge[]>("/challenges").then(setChallenges).catch((err) => setError(err.message));
-  }, [version]);
-
-  async function run(action: () => Promise<unknown>) {
-    setError("");
-    try {
-      await action();
-      setVersion((value) => value + 1);
-      app.refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save");
-    }
-  }
-
-  if (!challenges) return error ? <ErrorState message={error} /> : <Loading />;
-  return (
-    <>
-      <p className="muted">CharityOS is permanent. Challenges are dated containers inside it.</p>
-      <ul className="category-list">
-        {challenges.map((challenge) => (
-          <li key={challenge.id}>
-            <span className="grow">
-              <b>{challenge.name}</b>
-              <small>
-                {challenge.start_date} → {challenge.end_date} · {challenge.phase}
-                {challenge.phase === "active" ? ` · day ${challenge.current_day}/${challenge.total_days}` : ""}
-              </small>
-            </span>
-            {challenge.is_primary ? (
-              <span className="status-badge status-completed">Primary</span>
-            ) : (
-              <>
-                <button type="button" className="text-button" onClick={() => run(() => post(`/challenges/${challenge.id}/set-primary`))}>Use</button>
-                <button type="button" className="text-button" onClick={() => run(() => post(`/challenges/${challenge.id}/archive`))}>Archive</button>
-              </>
-            )}
-          </li>
-        ))}
-      </ul>
-      <form
-        className="panel form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          run(() => post("/challenges", { name, start_date: start, end_date: end, status: "active", is_primary: challenges.length === 0 }).then(() => setName("")));
-        }}
-      >
-        <h2 className="panel-title">New challenge</h2>
-        <label className="field"><span>Name</span><input value={name} onChange={(event) => setName(event.target.value)} required placeholder="Road to 2027" /></label>
-        <div className="field-row">
-          <label className="field"><span>Start</span><input type="date" value={start} onChange={(event) => setStart(event.target.value)} required /></label>
-          <label className="field"><span>End</span><input type="date" value={end} onChange={(event) => setEnd(event.target.value)} required /></label>
-        </div>
-        {error && <p className="form-error" role="alert">{error}</p>}
-        <button className="button">Create challenge</button>
-      </form>
     </>
   );
 }
