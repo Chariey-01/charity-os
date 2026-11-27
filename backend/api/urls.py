@@ -1,7 +1,7 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
-from . import schedule_views, views
+from . import growth_views, schedule_views, views
 
 router = DefaultRouter(trailing_slash=False)
 for prefix, view in (
@@ -26,8 +26,10 @@ for prefix, view in (
     ("daily-reflections", views.DailyReflectionViewSet),
     ("weekly-reviews", views.WeeklyReviewViewSet),
     ("schedule-entries", schedule_views.ScheduleEntryViewSet),
+    *growth_views.GROWTH_ROUTES,
 ):
     router.register(prefix, view, basename=prefix)
+router.register("activity", growth_views.ActivityViewSet, basename="activity")
 urlpatterns = [
     path("auth/csrf", views.csrf),
     path("auth/login", views.login_view),
@@ -40,4 +42,8 @@ urlpatterns = [
     path("areas/ensure-defaults", schedule_views.ensure_categories),
     path("areas/ensure-workstreams", schedule_views.ensure_workstreams_view),
     path("progress", views.progress_view),
+    path("journey", growth_views.journey_view),
+    path("journey/year-end", growth_views.year_end_view),
+    path("roadmap-templates", growth_views.roadmap_templates),
+    path("roadmaps/from-template", growth_views.roadmap_from_template),
 ] + router.urls

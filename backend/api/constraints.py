@@ -11,6 +11,51 @@ NON_FIELD = "non_field_errors"
 
 # constraint name -> (field, message)
 MESSAGES = {
+    "growth_vision_kind_valid": ("kind", "Choose vision, aspiration, manifestation or identity."),
+    "growth_vision_horizon_valid": ("horizon", "Choose short, medium, long or lifetime."),
+    "growth_vision_realised_consistent": (
+        "status",
+        "Realise a vision item with POST .../realise.",
+    ),
+    "growth_vision_target_year_valid": ("target_year", "Use a year such as 2030."),
+    "growth_vision_revision_unique": (NON_FIELD, "This revision already exists."),
+    "growth_goal_kind_valid": ("kind", "Choose measurable or qualitative."),
+    "growth_goal_measurable_has_target": (
+        "target_value",
+        "A measurable goal needs a target value.",
+    ),
+    "growth_goal_completed_consistent": (
+        "status",
+        "Complete a goal with POST .../status.",
+    ),
+    "growth_goal_dates_valid": (
+        "target_date",
+        "The target date cannot be before the start date.",
+    ),
+    "growth_project_active_name_ci_unique": (
+        "name",
+        "You already have an active project with this name.",
+    ),
+    "growth_project_status_valid": ("status", "Choose a valid project status."),
+    "growth_project_priority_valid": ("priority", "Priority must be between 0 and 3."),
+    "growth_project_completed_consistent": (
+        "status",
+        "Complete a project with POST .../status.",
+    ),
+    "growth_project_color_valid": ("color", "Use a hex colour such as #1F5A44."),
+    "growth_project_dates_valid": (
+        "deadline",
+        "The deadline cannot be before the start date.",
+    ),
+    "growth_milestone_one_parent": (
+        "goal",
+        "A milestone belongs to exactly one goal or one project.",
+    ),
+    "growth_milestone_completed_consistent": (
+        "status",
+        "Complete a milestone with POST .../status.",
+    ),
+    "growth_journal_kind_valid": ("kind", "Choose a valid journal entry kind."),
     "challenges_challenge_active_name_ci_unique": (
         "name",
         "You already have an active challenge with this name.",
