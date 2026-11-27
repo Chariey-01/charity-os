@@ -199,7 +199,7 @@ Drop the drill database afterwards. Never restore over the production database; 
 ## 7. Account setup (owner actions, about 45 minutes)
 
 Before starting:
-- Merge PR #5, then this branch, so that `main` holds the code to deploy. Vercel deploys from GitHub.
+- Vercel deploys from GitHub. The code is on the branch `feature/cloudflare-deploy` (pushed 27 Nov 2026). It stacks on PR #5 and the Render work. Until PR #5 can be merged, deploy that branch (step D). Once everything is merged, switch Vercel's production branch back to `main`.
 - Generate two secrets on the laptop and keep them in your password manager:
 
 ```bash
@@ -246,6 +246,7 @@ unset DATABASE_URL DJANGO_SECRET_KEY CHARITYOS_EDGE_PROXY_SECRET
 1. Sign up at [vercel.com](https://vercel.com/signup) on the **Hobby** plan with your GitHub account. Do not add a card.
 2. Choose **Add New → Project**, then import `charity-os`. Set:
    - **Root Directory: `backend`**;
+   - until the merges: Settings → Git → **Production Branch** `feature/cloudflare-deploy`;
    - framework: Django (detected from `manage.py`).
 3. Add these Environment Variables (Production):
 
