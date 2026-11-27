@@ -182,7 +182,14 @@ export type Task = {
   archived_at?: string | null;
   created_at?: string;
   is_deep_work_default: boolean;
+  goal?: string | null;
+  milestone?: string | null;
+  project?: string | null;
+  checklist?: ChecklistItem[];
+  notes?: string;
 };
+
+export type ChecklistItem = { id: string; text: string; done: boolean };
 
 export type ProgressTask = {
   id: string;
@@ -293,7 +300,19 @@ export type Insights = {
   week: WeekSummary;
 };
 
-export type Roadmap = { id: string; title: string; description: string; status: string; area?: string | null };
+export type Roadmap = {
+  id: string;
+  title: string;
+  description: string;
+  status: string;
+  area?: string | null;
+  purpose?: string;
+  notes?: string;
+  start_date?: string | null;
+  target_date?: string | null;
+  goal?: string | null;
+  archived_at?: string | null;
+};
 
 export type RoadmapNode = {
   id: string;
@@ -301,9 +320,13 @@ export type RoadmapNode = {
   description: string;
   node_type: string;
   state: string;
+  completion_criteria?: string;
+  notes?: string;
+  completed_at?: string | null;
+  position?: number;
   time_invested_seconds: number;
   linked_task_ids: string[];
-  resources: { id: string; label: string; url: string }[];
+  resources: { id: string; label: string; url: string; kind?: string; notes?: string }[];
   evidence_count: number;
   children: RoadmapNode[];
 };
@@ -318,3 +341,154 @@ export type QuickAddDefaults = {
   roadmap_node?: string | null;
   tracking?: "manual" | "focus";
 };
+
+export type VisionKind = "vision" | "aspiration" | "manifestation" | "identity";
+export type Horizon = "short" | "medium" | "long" | "lifetime";
+
+export type VisionItem = {
+  id: string;
+  kind: VisionKind;
+  title: string;
+  statement: string;
+  theme: string;
+  horizon: Horizon;
+  success_looks_like: string;
+  notes: string;
+  image_url: string;
+  target_year: number | null;
+  status: "active" | "realised" | "released";
+  realised_at: string | null;
+  realised_note: string;
+  realised_evidence_url: string;
+  position: number;
+  version: number;
+  goals_count: number;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type VisionRevision = { id: string; version: number; title: string; statement: string; success_looks_like: string; created_at: string };
+
+export type GoalProgress = {
+  ratio: number | null;
+  basis: "measure" | "milestones" | "none";
+  latest_value: string | null;
+  milestones_total: number;
+  milestones_done: number;
+  tasks_total: number;
+  tasks_done: number;
+  overdue: boolean;
+  at_risk: boolean;
+  days_left: number | null;
+};
+
+export type GoalStatus = "active" | "paused" | "completed" | "released";
+
+export type Goal = {
+  id: string;
+  title: string;
+  description: string;
+  why: string;
+  area: string | null;
+  vision: string | null;
+  vision_title: string | null;
+  kind: "measurable" | "qualitative";
+  metric_unit: string;
+  baseline_value: string | null;
+  target_value: string | null;
+  start_date: string | null;
+  target_date: string | null;
+  status: GoalStatus;
+  completed_at: string | null;
+  completion_note: string;
+  archived_at: string | null;
+  progress: GoalProgress;
+  created_at: string;
+};
+
+export type CheckIn = { id: string; goal: string; local_date: string; value: string | null; note: string; created_at: string };
+
+export type Milestone = {
+  id: string;
+  goal: string | null;
+  project: string | null;
+  title: string;
+  description: string;
+  target_date: string | null;
+  status: "open" | "done";
+  completed_at: string | null;
+  completion_note: string;
+  position: number;
+  archived_at: string | null;
+  tasks_total: number;
+  tasks_done: number;
+  overdue: boolean;
+};
+
+export type ProjectStatus = "planning" | "active" | "on_hold" | "completed" | "cancelled";
+
+export type Project = {
+  id: string;
+  name: string;
+  description: string;
+  notes: string;
+  area: string | null;
+  goal: string | null;
+  goal_title: string | null;
+  status: ProjectStatus;
+  priority: number;
+  start_date: string | null;
+  deadline: string | null;
+  color: string;
+  completed_at: string | null;
+  archived_at: string | null;
+  counts: { tasks: number; open: number; done: number; overdue: number; milestones: number; milestones_done: number };
+};
+
+export type ActivityEvent = {
+  id: string;
+  subject_type: string;
+  subject_id: string;
+  kind: string;
+  title: string;
+  data: Record<string, unknown>;
+  occurred_at: string;
+};
+
+export type JournalKind = "reflection" | "decision" | "challenge" | "lesson" | "moment" | "review";
+
+export type JournalEntry = {
+  id: string;
+  kind: JournalKind;
+  title: string;
+  body: string;
+  local_date: string;
+  goal: string | null;
+  project: string | null;
+  revisions: { title: string; body: string; replaced_at: string }[];
+  archived_at: string | null;
+};
+
+export type JourneyEntry = {
+  id: string;
+  type: string;
+  title: string;
+  date: string;
+  occurred_at: string;
+  subject_type?: string;
+  subject_id?: string;
+  detail: Record<string, unknown>;
+};
+
+export type Journey = {
+  year: number;
+  years: number[];
+  summary: Record<string, number>;
+  months: { month: string; tasks_completed: number; focus_minutes: number; top_areas: [string, number][] }[];
+  chapters: { id: string; name: string; start_date: string; end_date: string; status: string; archived: boolean; total_days: number }[];
+  entries: JourneyEntry[];
+  truncated: boolean;
+};
+
+export type RoadmapTemplate = { key: string; title: string; summary: string; stages: string[] };

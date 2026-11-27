@@ -121,7 +121,30 @@ def serializer_for(model, fields="__all__", read_only=()):
     return type(f"{model.__name__}Serializer", (OwnedModelSerializer,), {"Meta": meta})
 
 
-ChallengeSerializer = serializer_for(Challenge)
+class ChallengeSerializer(serializer_for(Challenge)):
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        previous = instance.status
+        challenge = super().update(instance, validated_data)
+        if challenge.status != previous:
+            from growth.services import record
+
+            record(
+                user=self.context["request"].user,
+                subject_type="challenge",
+                subject=challenge,
+                kind="completed"
+                if challenge.status == Challenge.Status.COMPLETED
+                else "status_changed",
+                title=challenge.name,
+                data={
+                    "from": previous,
+                    "to": challenge.status,
+                    "start_date": challenge.start_date.isoformat(),
+                    "end_date": challenge.end_date.isoformat(),
+                },
+            )
+        return challenge
 AreaSerializer = serializer_for(Area)
 DailyCapacitySerializer = serializer_for(DailyCapacity)
 DailyPlanSerializer = serializer_for(DailyPlan)
@@ -176,6 +199,49 @@ class TaskSerializer(OwnedModelSerializer):
     def get_legacy_status(self, obj):
         return self.LEGACY_OUTPUT.get(obj.status, "planned")
 
+    def validate_checklist(self, value):
+        if not isinstance(value, list) or len(value) > 50:
+            raise serializers.ValidationError("Use a list of at most 50 items.")
+        cleaned = []
+        for item in value:
+            if not isinstance(item, dict):
+                raise serializers.ValidationError("Each item needs text and done.")
+            text = item.get("text")
+            if not isinstance(text, str) or not text.strip() or len(text) > 200:
+                raise serializers.ValidationError(
+                    "Each item needs text of at most 200 characters."
+                )
+            cleaned.append(
+                {
+                    "id": str(item.get("id") or "")[:40],
+                    "text": text.strip(),
+                    "done": item.get("done") is True,
+                }
+            )
+        return cleaned
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+
+        def merged(field):
+            if field in attrs:
+                return attrs[field]
+            return getattr(self.instance, field) if self.instance else None
+
+        milestone = merged("milestone")
+        if milestone is not None:
+            # A milestone's parent becomes the task's goal or project.
+            for field in ("goal", "project"):
+                parent = getattr(milestone, field)
+                current = merged(field)
+                if parent is not None and current is not None and current != parent:
+                    raise serializers.ValidationError(
+                        {"milestone": [f"This milestone belongs to another {field}."]}
+                    )
+                if parent is not None and current is None:
+                    attrs[field] = parent
+        return attrs
+
     def validate_status(self, value):
         value = Task.LEGACY_TO_STATUS.get(value, value)
         if value not in Task.Status.values:
@@ -208,7 +274,28 @@ class TaskSerializer(OwnedModelSerializer):
         return task
 
 
-RoadmapSerializer = serializer_for(Roadmap)
+class RoadmapSerializer(serializer_for(Roadmap)):
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        previous = instance.status
+        roadmap = super().update(instance, validated_data)
+        if roadmap.status != previous and Roadmap.Status.COMPLETED in (
+            previous,
+            roadmap.status,
+        ):
+            from growth.services import record
+
+            record(
+                user=self.context["request"].user,
+                subject_type="roadmap",
+                subject=roadmap,
+                kind="completed"
+                if roadmap.status == Roadmap.Status.COMPLETED
+                else "reopened",
+                title=roadmap.title,
+                data={"progress": roadmap.progress()},
+            )
+        return roadmap
 
 
 class RoadmapNodeSerializer(OwnedModelSerializer):
@@ -259,7 +346,22 @@ class RoadmapNodeSerializer(OwnedModelSerializer):
         if state == RoadmapNode.State.COMPLETED and instance.state != state:
             from django.utils import timezone
 
+            from growth.services import record
+
             instance.completed_at = timezone.now()
+            record(
+                user=self.context["request"].user,
+                subject_type="roadmap_item",
+                subject=instance,
+                kind="completed",
+                title=validated_data.get("title", instance.title),
+                data={
+                    "roadmap": roadmap.title,
+                    "roadmap_id": str(roadmap.pk),
+                    "parent": instance.parent.title if instance.parent_id else None,
+                    "node_type": instance.node_type,
+                },
+            )
         elif state != RoadmapNode.State.COMPLETED:
             instance.completed_at = None
         instance.state = state

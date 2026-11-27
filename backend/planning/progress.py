@@ -62,6 +62,8 @@ class History:
     statuses: list = field(default_factory=list)  # (when, from, to)
     dues: list = field(default_factory=list)  # (when, from, to)
     archives: list = field(default_factory=list)  # (when, archived?)
+    # Workstream recorded by each completion event (TD-1): (when, area dict).
+    done_areas: list = field(default_factory=list)
 
     def exists(self, moment):
         return self.task.created_at <= moment
@@ -92,6 +94,19 @@ class History:
         if done:
             return done[-1]
         return self.task.completed_at
+
+    def completion_area(self, moment):
+        """The workstream the task had when it was completed, if recorded.
+
+        Completion events since TD-1 carry an ``area`` snapshot, so moving a
+        done task to another workstream later does not move it in past weeks.
+        Older events have no snapshot and fall back to the current one.
+        """
+        before = [area for when, area in self.done_areas if when <= moment]
+        return before[-1] if before else None
+
+    def has_completion_area(self, moment):
+        return any(when <= moment for when, _ in self.done_areas)
 
     def due_at(self, moment):
         before = [change for change in self.dues if change[0] <= moment]
@@ -128,6 +143,8 @@ def histories(user, created_before):
             to = snap.get("to") or EVENT_STATUS.get(kind)
             if to:
                 history.statuses.append((event.created_at, snap.get("from"), to))
+            if to == DONE and "area" in snap:
+                history.done_areas.append((event.created_at, snap["area"]))
         elif kind == PlanningEvent.EventType.DUE_CHANGED:
             history.dues.append(
                 (event.created_at, _date(snap.get("from")), _date(snap.get("to")))
@@ -191,10 +208,22 @@ def week_of(user, day):
 def _summary(history, moment, zone, planned):
     task = history.task
     completed = history.completed_at(moment)
+    attribution = _area(task)
+    if completed and history.has_completion_area(moment):
+        recorded = history.completion_area(moment)
+        attribution = (
+            dict(NO_AREA)
+            if recorded is None
+            else {
+                "area": recorded.get("id"),
+                "label": recorded.get("label") or NO_AREA["label"],
+                "color": recorded.get("color") or NO_AREA["color"],
+            }
+        )
     return {
         "id": str(task.id),
         "title": task.title,
-        **_area(task),
+        **attribution,
         "due_date": history.due_at(moment),
         "status": history.status_at(moment),
         "status_now": task.status,

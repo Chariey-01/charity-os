@@ -49,18 +49,27 @@ def applied(app):
         return {row[0] for row in cursor.fetchall()}
 
 
+# Only the columns every compared state has: archived_at arrives in 0002 and
+# version in reflections.0003. Columns that later migrations add (a roadmap's
+# purpose and dates, roadmaps.0004) are not part of what this test compares.
+LATER_COLUMNS = {
+    "Roadmap": {"purpose", "notes", "start_date", "target_date", "goal_id"},
+    "RoadmapNode": {"completion_criteria", "notes"},
+    "RoadmapResource": {"kind", "notes"},
+}
+
+
 def rows(apps):
     """Every column except archived_at, for every model the migrations touch."""
     snapshot = {}
     for app, names in MODELS.items():
         for name in names:
             model = apps.get_model(app, name)
-            # Only the columns every compared state has: archived_at arrives in
-            # 0002 and version in reflections.0003.
             columns = [
                 field.attname
                 for field in model._meta.concrete_fields
                 if field.name not in ("archived_at", "version")
+                and field.attname not in LATER_COLUMNS.get(name, ())
             ]
             snapshot[name] = list(model.objects.order_by("pk").values_list(*columns))
     return snapshot

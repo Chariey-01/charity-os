@@ -1,8 +1,14 @@
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Icon } from "../components/ui";
 import { FocusBar } from "../features/focus/FocusBar";
+import { ChallengesScreen } from "../features/challenges/ChallengesScreen";
+import { GoalsScreen } from "../features/goals/GoalsScreen";
 import { InsightsScreen } from "../features/insights/InsightsScreen";
+import { JourneyScreen } from "../features/journey/JourneyScreen";
+import { MeScreen } from "../features/me/MeScreen";
+import { PlanScreen } from "../features/plan/PlanScreen";
+import { ProjectsScreen } from "../features/projects/ProjectsScreen";
 import { ProfileScreen } from "../features/profile/ProfileScreen";
 import { RoadmapsScreen } from "../features/roadmaps/RoadmapsScreen";
 import { EntrySheet } from "../features/schedule/EntrySheet";
@@ -11,13 +17,14 @@ import { ScheduleScreen } from "../features/schedule/ScheduleScreen";
 import { TaskSheet, TaskSheetMode } from "../features/tasks/TaskSheet";
 import { TasksScreen } from "../features/tasks/TasksScreen";
 import { TodayScreen } from "../features/today/TodayScreen";
+import { VisionScreen } from "../features/vision/VisionScreen";
 import { ApiError, api, onSessionEnded, post } from "../lib/api";
 import { useOnline } from "../lib/pwa";
 import { useReminders } from "../lib/reminders";
 import { addDays, todayIn } from "../lib/time";
 import type { Area, Entry, Preferences, QuickAddDefaults, Session, Task, User } from "../lib/types";
 import { AppContext, AppContextValue, EntrySheetMode, ToastKind } from "./context";
-import { navigate, tabOf, useHashRoute } from "./router";
+import { navigate, screenOf, tabOf, useHashRoute } from "./router";
 
 // Kept exported so timestamp reconstruction stays independently testable.
 // eslint-disable-next-line react-refresh/only-export-components
@@ -41,9 +48,8 @@ const NAV = [
   { tab: "today", label: "Today", icon: "today" },
   { tab: "tasks", label: "Tasks", icon: "tasks" },
   { tab: "schedule", label: "Schedule", icon: "schedule" },
-  { tab: "roadmaps", label: "Roadmaps", icon: "roadmaps" },
-  { tab: "insights", label: "Insights", icon: "insights" },
-  { tab: "profile", label: "Profile", icon: "profile" },
+  { tab: "plan", label: "Plan", icon: "plan" },
+  { tab: "me", label: "Me", icon: "me" },
 ] as const;
 
 type Toast = { id: number; message: string; kind: ToastKind };
@@ -157,6 +163,7 @@ export function App() {
 function Shell({ user, setUser }: { user: User; setUser: (user: User | null) => void }) {
   const route = useHashRoute();
   const tab = tabOf(route);
+  const screenName = screenOf(route);
   const online = useOnline();
   const [allAreas, setAllAreas] = useState<Area[]>([]);
   const [prefs, setPrefs] = useState<Preferences>(DEFAULT_PREFS);
@@ -266,20 +273,21 @@ function Shell({ user, setUser }: { user: User; setUser: (user: User | null) => 
     [user, areas, allAreas, prefs, session, dataVersion, online, today, reloadAreas, setUser, toast],
   );
 
-  const screen =
-    tab === "tasks" ? (
-      <TasksScreen route={route} />
-    ) : tab === "schedule" ? (
-      <ScheduleScreen route={route} />
-    ) : tab === "roadmaps" ? (
-      <RoadmapsScreen />
-    ) : tab === "insights" ? (
-      <InsightsScreen route={route} />
-    ) : tab === "profile" ? (
-      <ProfileScreen route={route} />
-    ) : (
-      <TodayScreen key={prefs.default_today_view} />
-    );
+  const screens: Record<string, () => ReactNode> = {
+    tasks: () => <TasksScreen route={route} />,
+    schedule: () => <ScheduleScreen route={route} />,
+    plan: () => <PlanScreen />,
+    vision: () => <VisionScreen />,
+    goals: () => <GoalsScreen route={route} />,
+    projects: () => <ProjectsScreen route={route} />,
+    roadmaps: () => <RoadmapsScreen route={route} />,
+    challenges: () => <ChallengesScreen />,
+    me: () => <MeScreen />,
+    journey: () => <JourneyScreen />,
+    insights: () => <InsightsScreen route={route} />,
+    profile: () => <ProfileScreen route={route} />,
+  };
+  const screen = (screens[screenName] ?? (() => <TodayScreen key={prefs.default_today_view} />))();
 
   return (
     <AppContext.Provider value={value}>
@@ -298,17 +306,17 @@ function Shell({ user, setUser }: { user: User; setUser: (user: User | null) => 
           type="button"
           className="fab"
           onClick={() =>
-            tab === "tasks"
+            tab === "tasks" || tab === "plan"
               ? setTaskSheet({ id: null, mode: "edit", key: Date.now() })
               : setQuickAdd({ date: tab === "schedule" ? route.params.get("date") ?? today : today })
           }
-          aria-label={tab === "tasks" ? "Add a task" : "Quick add activity"}
+          aria-label={tab === "tasks" || tab === "plan" ? "Add a task" : "Quick add activity"}
         >
           <Icon name="plus" size={26} />
         </button>
         <nav className="bottom-nav" aria-label="Primary">
           {NAV.map((item) => (
-            <a key={item.tab} href={`#/${item.tab}`} className={tab === item.tab ? "active" : ""} aria-current={tab === item.tab ? "page" : undefined}>
+            <a key={item.tab} href={`#/${item.tab}`} className={tab === item.tab ? "active" : ""} aria-current={tab === item.tab && screenName === item.tab ? "page" : undefined}>
               <Icon name={item.icon} />
               <span>{item.label}</span>
             </a>

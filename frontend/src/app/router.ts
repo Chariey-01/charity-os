@@ -2,8 +2,31 @@ import { useEffect, useState } from "react";
 
 export type Route = { path: string[]; params: URLSearchParams };
 
-export const TABS = ["today", "tasks", "schedule", "roadmaps", "insights", "profile"] as const;
+export const TABS = ["today", "tasks", "schedule", "plan", "me"] as const;
 export type Tab = (typeof TABS)[number];
+
+/** Screens reached through a hub keep that hub's tab highlighted. */
+const SECTION_TAB: Record<string, Tab> = {
+  plan: "plan",
+  vision: "plan",
+  goals: "plan",
+  projects: "plan",
+  roadmaps: "plan",
+  challenges: "plan",
+  me: "me",
+  journey: "me",
+  insights: "me",
+  profile: "me",
+  partners: "me",
+  feedback: "me",
+};
+
+export const SCREENS = ["today", "tasks", "schedule", ...Object.keys(SECTION_TAB)] as const;
+
+export function screenOf(route: Route): string {
+  const head = route.path[0];
+  return (SCREENS as readonly string[]).includes(head) ? head : "today";
+}
 
 export function parseHash(hash: string): Route {
   const raw = hash.replace(/^#\/?/, "");
@@ -29,6 +52,7 @@ export function navigate(hash: string) {
 }
 
 export function tabOf(route: Route): Tab {
-  const head = route.path[0] as Tab;
-  return TABS.includes(head) ? head : "today";
+  const head = route.path[0];
+  if (SECTION_TAB[head]) return SECTION_TAB[head];
+  return TABS.includes(head as Tab) ? (head as Tab) : "today";
 }

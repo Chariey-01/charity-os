@@ -173,8 +173,15 @@ def test_restrict_migrations_keep_old_shape_data_both_ways():
 
         forward = all_forward()
         assert table_rows(forward, columns_from=old) == before
-        # Columns added since (planning.0011's due_date) hold nothing yet.
-        assert added_columns(forward, columns_from=old) == {"planning.Task": {(None,)}}
+        # Columns added since hold nothing yet: planning.0011's due_date, then
+        # planning.0012 (checklist, goal, milestone, notes, project) and
+        # roadmaps.0004 (purpose, notes, dates, goal; criteria; resource kind).
+        assert added_columns(forward, columns_from=old) == {
+            "planning.Task": {(None, "[]", None, None, "", None)},
+            "roadmaps.Roadmap": {(None, "", "", None, None)},
+            "roadmaps.RoadmapNode": {("", "")},
+            "roadmaps.RoadmapResource": {("other", "")},
+        }
         for app, target in BEFORE_RESTRICT.items():
             reverted = apply([(app, target)])
         assert table_rows(reverted) == before

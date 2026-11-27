@@ -36,12 +36,21 @@ def node_detail(node, include_archived=False, _path=frozenset()):
         "description": node.description,
         "node_type": node.node_type,
         "state": node.state,
+        "completion_criteria": node.completion_criteria,
+        "notes": node.notes,
+        "completed_at": node.completed_at,
         "position": node.position,
         "archived_at": node.archived_at,
         "time_invested_seconds": seconds,
         "linked_task_ids": [str(value) for value in task_ids],
         "resources": [
-            {"id": str(resource.id), "label": resource.label, "url": resource.url}
+            {
+                "id": str(resource.id),
+                "label": resource.label,
+                "url": resource.url,
+                "kind": resource.kind,
+                "notes": resource.notes,
+            }
             for resource in _active(node.resources.all(), include_archived).order_by(
                 "position"
             )

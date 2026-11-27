@@ -1,11 +1,11 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 
 import { useApp } from "../../app/context";
 import { ErrorState, Icon, Loading, Sheet } from "../../components/ui";
 import { ApiError, api, newId, patch, post } from "../../lib/api";
 import { PRIORITIES, STATUS_LABEL, deferOptions, dueLabel, isOpen, priorityLabel } from "../../lib/tasks";
 import { addDays, durationLabel } from "../../lib/time";
-import type { Entry, Roadmap, RoadmapNode, Task } from "../../lib/types";
+import type { ChecklistItem, Entry, Goal, Milestone, Project, Roadmap, RoadmapNode, Task } from "../../lib/types";
 
 export type TaskSheetMode = "view" | "edit";
 
@@ -19,6 +19,9 @@ type Draft = {
   due_date: string;
   estimated_minutes: string;
   status: string;
+  project: string;
+  goal: string;
+  milestone: string;
 };
 
 const EDITABLE_STATUSES = ["backlog", "todo", "in_progress", "in_review", "blocked", "done"];
@@ -34,6 +37,9 @@ function draftOf(task: Partial<Task> | null): Draft {
     due_date: task?.due_date ?? "",
     estimated_minutes: task?.estimated_minutes ? String(task.estimated_minutes) : "",
     status: task?.status ?? "todo",
+    project: task?.project ?? "",
+    goal: task?.goal ?? "",
+    milestone: task?.milestone ?? "",
   };
 }
 
@@ -130,6 +136,9 @@ function TaskForm({
       due_date: draft.due_date || null,
       estimated_minutes: draft.estimated_minutes ? Number(draft.estimated_minutes) : null,
       status: draft.status,
+      project: draft.project || null,
+      goal: draft.goal || null,
+      milestone: draft.milestone || null,
     };
     try {
       const saved = task
@@ -239,6 +248,8 @@ function TaskForm({
           </select>
         </label>
       </div>
+      <LinkPicker draft={draft} set={(key, value) => set(key, value)} />
+      {fields.milestone && <small className="form-error">{fields.milestone}</small>}
       <RoadmapItemPicker value={draft.roadmap_item} onChange={(value) => set("roadmap_item", value)} />
       <label className="field">
         <span>Notes <small className="optional">optional</small></span>
@@ -250,6 +261,157 @@ function TaskForm({
         <button className="button" disabled={busy || !app.online}>{busy ? "Saving…" : task ? "Save" : "Add task"}</button>
       </div>
     </form>
+  );
+}
+
+/** Project, goal and milestone. A milestone sets its own goal or project. */
+function LinkPicker({ draft, set }: { draft: Draft; set: (key: "project" | "goal" | "milestone", value: string) => void }) {
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [goals, setGoals] = useState<Goal[]>([]);
+  const [milestones, setMilestones] = useState<Milestone[]>([]);
+  useEffect(() => {
+    api<Project[]>("/projects").then(setProjects).catch(() => undefined);
+    api<Goal[]>("/goals").then(setGoals).catch(() => undefined);
+  }, []);
+  useEffect(() => {
+    const parent = draft.project ? `project=${draft.project}` : draft.goal ? `goal=${draft.goal}` : "";
+    if (!parent) {
+      setMilestones([]);
+      return;
+    }
+    api<Milestone[]>(`/milestones?${parent}`).then(setMilestones).catch(() => setMilestones([]));
+  }, [draft.project, draft.goal]);
+  const openProjects = projects.filter((p) => !["completed", "cancelled"].includes(p.status) || p.id === draft.project);
+  if (!openProjects.length && !goals.length) return null;
+  return (
+    <div className="field-row">
+      {openProjects.length > 0 && (
+        <label className="field">
+          <span>Project <small className="optional">optional</small></span>
+          <select value={draft.project} onChange={(event) => (set("project", event.target.value), set("milestone", ""))}>
+            <option value="">No project</option>
+            {openProjects.map((project) => (
+              <option key={project.id} value={project.id}>{project.name}</option>
+            ))}
+          </select>
+        </label>
+      )}
+      {goals.length > 0 && (
+        <label className="field">
+          <span>Goal <small className="optional">optional</small></span>
+          <select value={draft.goal} onChange={(event) => (set("goal", event.target.value), !draft.project && set("milestone", ""))}>
+            <option value="">No goal</option>
+            {goals.map((goal) => (
+              <option key={goal.id} value={goal.id}>{goal.title}</option>
+            ))}
+          </select>
+        </label>
+      )}
+      {milestones.length > 0 && (
+        <label className="field">
+          <span>Milestone <small className="optional">optional</small></span>
+          <select value={draft.milestone} onChange={(event) => set("milestone", event.target.value)}>
+            <option value="">None</option>
+            {milestones.filter((m) => m.status === "open" || m.id === draft.milestone).map((milestone) => (
+              <option key={milestone.id} value={milestone.id}>{milestone.title}</option>
+            ))}
+          </select>
+        </label>
+      )}
+    </div>
+  );
+}
+
+/** Subtasks as a checklist; each change saves straight away. */
+function Checklist({ task, onChange }: { task: Task; onChange: (task: Task) => void }) {
+  const app = useApp();
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  // Shown straight away; put back if the server refuses the change.
+  const [pending, setPending] = useState<ChecklistItem[] | null>(null);
+  // Saves can overlap (tick an item while the previous change is in flight);
+  // only the latest one decides what is shown.
+  const latest = useRef(0);
+  const items = pending ?? task.checklist ?? [];
+  async function save(next: ChecklistItem[]) {
+    const request = ++latest.current;
+    setBusy(true);
+    setPending(next);
+    try {
+      const saved = await patch<Task>(`/tasks/${task.id}`, { checklist: next });
+      if (request === latest.current) onChange(saved);
+    } catch (err) {
+      app.toast(err instanceof Error ? err.message : "Could not save the checklist", "error");
+    } finally {
+      if (request === latest.current) {
+        setPending(null);
+        setBusy(false);
+      }
+    }
+  }
+  return (
+    <section className="checklist" aria-label="Checklist">
+      <p className="eyebrow">
+        Checklist {items.length > 0 && `· ${items.filter((item) => item.done).length}/${items.length}`}
+      </p>
+      <ul>
+        {items.map((item) => (
+          <li key={item.id}>
+            <label className="check-field">
+              <input
+                type="checkbox"
+                checked={item.done}
+                disabled={Boolean(task.archived_at)}
+                aria-busy={busy}
+                onChange={() => save(items.map((value) => (value.id === item.id ? { ...value, done: !value.done } : value)))}
+              />
+              <span className={item.done ? "done-text" : ""}>{item.text}</span>
+            </label>
+            {!task.archived_at && (
+              <button type="button" className="icon-button" aria-label={`Remove ${item.text}`} disabled={busy} onClick={() => save(items.filter((value) => value.id !== item.id))}>
+                <Icon name="close" size={16} />
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+      {!task.archived_at && (
+        <form
+          className="inline-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!text.trim()) return;
+            save([...items, { id: newId().slice(0, 8), text: text.trim(), done: false }]).then(() => setText(""));
+          }}
+        >
+          <input aria-label="New checklist item" value={text} onChange={(event) => setText(event.target.value)} maxLength={200} placeholder="Add a step" />
+          <button className="button small secondary" disabled={busy || !text.trim()}>Add</button>
+        </form>
+      )}
+    </section>
+  );
+}
+
+function TaskLinks({ task }: { task: Task }) {
+  const [names, setNames] = useState<{ project?: string; goal?: string }>({});
+  useEffect(() => {
+    if (task.project) api<Project>(`/projects/${task.project}`).then((p) => setNames((n) => ({ ...n, project: p.name }))).catch(() => undefined);
+    if (task.goal) api<Goal>(`/goals/${task.goal}`).then((g) => setNames((n) => ({ ...n, goal: g.title }))).catch(() => undefined);
+  }, [task.project, task.goal]);
+  if (!task.project && !task.goal) return null;
+  return (
+    <p className="chip-row">
+      {task.project && (
+        <a className="chip small" href={`#/projects/${task.project}`}>
+          <Icon name="project" size={16} /> {names.project ?? "Project"}
+        </a>
+      )}
+      {task.goal && (
+        <a className="chip small" href={`#/goals/${task.goal}`}>
+          <Icon name="goal" size={16} /> {names.goal ?? "Goal"}
+        </a>
+      )}
+    </p>
   );
 }
 
@@ -410,8 +572,10 @@ function TaskActions({
         <p className="muted">{meta.join(" · ")}</p>
         {archived && <p className="hint">Archived. It stays in your history and can be restored.</p>}
         {task.description && <p className="task-notes">{task.description}</p>}
-        {task.roadmap_item && <p className="hint">Linked to a roadmap milestone.</p>}
+        {task.roadmap_item && <p className="hint">Linked to a roadmap item.</p>}
+        <TaskLinks task={task} />
       </div>
+      <Checklist task={task} onChange={onChange} />
 
       {!archived && (
         <>
