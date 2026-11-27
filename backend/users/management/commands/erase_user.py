@@ -29,10 +29,28 @@ from django.db.models.deletion import Collector
 from config.security import security_event
 
 
-def _owner_id(obj, user_model):
+# Two-party records (community app): an accountability partnership belongs to
+# both the person sharing and the partner, and its cheers to both as well, so
+# erasing either person removes the relationship and nothing else of the other.
+# A beta invite belongs to the admin who created it.
+def _owners(obj, user_model):
     if isinstance(obj, user_model):
-        return obj.pk
-    return getattr(obj, "user_id", None)
+        return {obj.pk}
+    label = obj._meta.label
+    if label == "community.Partnership":
+        return {obj.owner_id, obj.partner_id}
+    if label == "community.Cheer":
+        return {obj.sender_id, obj.partnership.owner_id, obj.partnership.partner_id}
+    if label == "community.BetaInvite":
+        return {obj.created_by_id}
+    return {getattr(obj, "user_id", None)}
+
+
+TWO_PARTY = {"community.Partnership", "community.Cheer", "community.BetaInvite"}
+
+# Auto-created many-to-many link tables of two-party records: a link row goes
+# when either side is erased (a shared goal, or the partnership itself).
+LINK_TABLES = {"community.Partnership_goals", "community.Partnership_weekly_reviews"}
 
 
 def erasure_plan(user):
@@ -58,10 +76,18 @@ def erasure_plan(user):
     for model, objects in collector.data.items():
         for obj in objects:
             rows[model._meta.label].add(obj.pk)
-            if _owner_id(obj, user_model) != user.pk:
+            if user.pk not in _owners(obj, user_model):
                 foreign[model._meta.label] += 1
     for queryset in collector.fast_deletes:
         model = queryset.model
+        if model._meta.label in TWO_PARTY:
+            for obj in queryset:
+                if obj.pk not in rows[model._meta.label] and user.pk not in _owners(
+                    obj, user_model
+                ):
+                    foreign[model._meta.label] += 1
+                rows[model._meta.label].add(obj.pk)
+            continue
         owned = any(field.attname == "user_id" for field in model._meta.concrete_fields)
         pairs = (
             queryset.values_list("pk", "user_id")
@@ -69,7 +95,8 @@ def erasure_plan(user):
             else ((pk, None) for pk in queryset.values_list("pk", flat=True))
         )
         for pk, owner in pairs:
-            if pk not in rows[model._meta.label] and owner != user.pk:
+            linked = model._meta.label in LINK_TABLES
+            if pk not in rows[model._meta.label] and owner != user.pk and not linked:
                 foreign[model._meta.label] += 1
             rows[model._meta.label].add(pk)
     if collector.field_updates:
