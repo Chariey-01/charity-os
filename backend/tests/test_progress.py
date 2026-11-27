@@ -395,3 +395,69 @@ def test_the_endpoint(user):
     }
     assert bad.status_code == 400
     assert anonymous.json()["error"]["code"] == "not_authenticated"
+
+
+def test_another_users_records_never_appear(user, django_user_model, learning):
+    other = django_user_model.objects.create_user("other@example.com", "pw-123456-abc")
+    other.timezone = "Africa/Nairobi"
+    other.save()
+    theirs = make(other, "Their task", due="2026-11-18")
+    complete(other, theirs, at("2026-11-18"))
+    entry(other, make(other, "Their scheduled task"), "2026-11-19")
+    their_area = Area.objects.create(user=other, name="Theirs", slug="theirs")
+    FocusSession.objects.create(
+        user=other,
+        area=their_area,
+        title="Theirs",
+        is_deep_work=False,
+        started_at=at("2026-11-19", 9),
+        ended_at=at("2026-11-19", 10),
+        duration_seconds=3600,
+        status="completed",
+        timezone_snapshot="Africa/Nairobi",
+        area_label_snapshot="Theirs",
+    )
+
+    data = progress(user, W, now=NOW)
+
+    assert data["weekly"]["planned"] == data["weekly"]["completed_total"] == 0
+    assert data["overall"]["completed"] == 0
+    assert data["workstreams"] == {"completed_tasks": [], "time": []}
+    assert data["accomplishments"]["focus_minutes"] == 0
+
+
+def test_reopened_later_in_the_same_week_is_not_completed(user):
+    task = make(user, "Essay", due="2026-11-18")
+    complete(user, task, at("2026-11-17"))
+    reopen(user, task, at("2026-11-19"))
+
+    week = weekly(user)
+
+    assert (week["planned"], week["completed"], week["outstanding"]) == (1, 0, 1)
+
+
+def test_archiving_during_the_week_removes_it_archiving_afterwards_does_not(user):
+    during = make(user, "Archived Wednesday", due="2026-11-17")
+    complete(user, during, at("2026-11-17"))
+    archive(user, during, at("2026-11-18"))
+    after = make(user, "Archived next week", due="2026-11-17")
+    complete(user, after, at("2026-11-17"))
+    archive(user, after, at("2026-11-24"))
+
+    week = progress(user, W, now=NOW)
+
+    assert [row["title"] for row in week["tasks"]["completed"]] == [
+        "Archived next week"
+    ]
+    assert week["weekly"]["planned"] == 1
+
+
+def test_one_task_planned_three_ways_counts_once(user):
+    task = make(user, "Client call", due="2026-11-19")
+    entry(user, task, "2026-11-18")
+    entry(user, task, "2026-11-19")
+    complete(user, task, at("2026-11-19", 16))
+
+    week = weekly(user)
+
+    assert (week["planned"], week["completed"], week["completed_total"]) == (1, 1, 1)
