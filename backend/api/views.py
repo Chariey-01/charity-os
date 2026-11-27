@@ -827,7 +827,7 @@ class SessionViewSet(OwnedViewSet):
         return Response(self.get_serializer(obj).data)
 
 
-METRICS_PERIODS = ("7d", "30d", "90d", "year", "challenge")
+METRICS_PERIODS = ("7d", "30d", "90d", "180d", "year", "challenge")
 # A year view (366 days in a leap year) is the longest day-by-day series served.
 MAX_METRICS_DAYS = 366
 
@@ -851,6 +851,8 @@ def metrics(request):
         start = today - timedelta(days=6)
     elif period == "90d":
         start = today - timedelta(days=89)
+    elif period == "180d":
+        start = today - timedelta(days=179)
     elif period == "year":
         start = today.replace(month=1, day=1)
     elif period == "challenge":

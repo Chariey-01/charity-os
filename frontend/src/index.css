@@ -876,3 +876,8 @@ a.entity-card:hover { border-color: color-mix(in srgb, var(--brand-2) 45%, var(-
 .milestone-mini .done { color: var(--muted); text-decoration: line-through; }
 .invite-created { display: grid; gap: 8px; padding: 12px; border-radius: 12px; }
 .invite-created input, .notice-panel input { width: 100%; min-height: 44px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); font: inherit; font-size: 13px; }
+.direction-list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.direction-list a { display: grid; gap: 6px; padding: 10px 0; border-bottom: 1px solid var(--line); color: var(--ink); text-decoration: none; }
+.direction-list li:last-child a { border-bottom: 0; }
+.direction-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 650; overflow-wrap: anywhere; }
+.direction-list small { color: var(--muted); font-size: 12.5px; }

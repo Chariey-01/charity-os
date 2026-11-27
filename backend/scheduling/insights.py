@@ -22,7 +22,7 @@ from reflections.models import DailyReflection, WeeklyReview
 
 from .models import ScheduleEntry
 
-PERIODS = ("7d", "30d", "90d", "challenge", "year", "all")
+PERIODS = ("7d", "30d", "90d", "180d", "challenge", "year", "all")
 MILESTONES = (3, 7, 12)
 Status = ScheduleEntry.Status
 
@@ -65,6 +65,8 @@ def period_bounds(user, period, today):
         return today - timedelta(days=6), today
     if period == "90d":
         return today - timedelta(days=89), today
+    if period == "180d":
+        return today - timedelta(days=179), today
     if period == "year":
         return today.replace(month=1, day=1), today
     if period == "all":

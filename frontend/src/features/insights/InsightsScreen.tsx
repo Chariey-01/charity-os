@@ -8,6 +8,7 @@ import { formatDate } from "../../lib/time";
 import type { Insights } from "../../lib/types";
 import { formatMinutes } from "../../lib/format";
 import { CategoryBars, ColumnChart, Point } from "./Chart";
+import { Direction } from "./Direction";
 import { WeeklyProgress } from "./WeeklyProgress";
 import { WeeklyReview } from "./WeeklyReview";
 
@@ -15,6 +16,7 @@ const PERIODS = [
   { value: "7d", label: "7 days" },
   { value: "30d", label: "30 days" },
   { value: "90d", label: "90 days" },
+  { value: "180d", label: "6 months" },
   { value: "challenge", label: "Challenge" },
   { value: "year", label: "This year" },
   { value: "all", label: "All time" },
@@ -26,7 +28,7 @@ const short = (date: string) => formatDate(date, { day: "numeric", month: "short
 /** Compact axis tick: the day number, or the month name on the 1st. Full dates live in the tooltip and table. */
 const tick = (date: string) => (date.endsWith("-01") ? formatDate(date, { month: "short" }) : String(Number(date.slice(8))));
 
-type View = "week" | "trends";
+type View = "week" | "direction" | "trends";
 
 /**
  * Insights has two views: this week's task progress (the default, with the
@@ -47,7 +49,8 @@ export function InsightsScreen({ route }: { route: Route }) {
       </section>
     );
   }
-  const view: View = route.params.get("view") === "trends" ? "trends" : "week";
+  const requested = route.params.get("view");
+  const view: View = requested === "trends" || requested === "direction" ? requested : "week";
   return (
     <section className="screen insights" aria-labelledby="insights-title">
       <header className="screen-head">
@@ -58,14 +61,17 @@ export function InsightsScreen({ route }: { route: Route }) {
       <Segmented<View>
         label="Insights view"
         value={view}
-        onChange={(next) => app.navigate(next === "trends" ? "#/insights?view=trends" : "#/insights")}
+        onChange={(next) => app.navigate(next === "week" ? "#/insights" : `#/insights?view=${next}`)}
         options={[
           { value: "week", label: "This week" },
+          { value: "direction", label: "Direction" },
           { value: "trends", label: "Trends" },
         ]}
       />
       {view === "week" ? (
         <WeeklyProgress week={week} onWeek={(date) => app.navigate(`#/insights?week=${date}`)} />
+      ) : view === "direction" ? (
+        <Direction />
       ) : (
         <Trends />
       )}

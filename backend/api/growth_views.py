@@ -8,6 +8,7 @@ from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 
 from growth import services
+from growth.direction import direction
 from growth.journey import journey, year_end_candidates
 from growth.models import (
     ActivityEvent,
@@ -367,6 +368,11 @@ def journey_view(request):
     if not 1900 <= year <= 2200:
         raise serializers.ValidationError({"year": ["Use a year such as 2026."]})
     return Response(journey(request.user, year))
+
+
+@api_view(["GET"])
+def direction_view(request):
+    return Response(direction(request.user, local_today(request.user)))
 
 
 @api_view(["GET"])
