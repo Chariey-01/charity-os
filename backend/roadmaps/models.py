@@ -11,6 +11,7 @@ from planning.models import Area
 class Roadmap(models.Model):
     class Status(models.TextChoices):
         ACTIVE = "active", "Active"
+        PAUSED = "paused", "Paused"
         COMPLETED = "completed", "Completed"
         # "archived" was a status until roadmaps.0002; archiving is archived_at.
 
@@ -20,6 +21,17 @@ class Roadmap(models.Model):
     )
     title = models.CharField(max_length=160)
     description = models.TextField(blank=True, default="")
+    purpose = models.TextField(blank=True, default="")
+    notes = models.TextField(blank=True, default="")
+    start_date = models.DateField(null=True, blank=True)
+    target_date = models.DateField(null=True, blank=True)
+    goal = models.ForeignKey(
+        "growth.Goal",
+        null=True,
+        blank=True,
+        on_delete=models.RESTRICT,
+        related_name="roadmaps",
+    )
     area = models.ForeignKey(
         Area, null=True, blank=True, on_delete=models.RESTRICT, related_name="roadmaps"
     )
@@ -76,6 +88,9 @@ class RoadmapNode(models.Model):
         max_length=12, choices=State.choices, default=State.PLANNED
     )
     position = models.PositiveIntegerField(default=0)
+    # What "done" means for this stage or item, and the learner's own notes.
+    completion_criteria = models.TextField(blank=True, default="")
+    notes = models.TextField(blank=True, default="")
     completed_at = models.DateTimeField(null=True, blank=True)
     archived_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -125,6 +140,16 @@ class RoadmapNodePrerequisite(models.Model):
 
 
 class RoadmapResource(models.Model):
+    class Kind(models.TextChoices):
+        COURSE = "course", "Course"
+        DOCS = "docs", "Documentation"
+        VIDEO = "video", "Video"
+        ARTICLE = "article", "Article"
+        BOOK = "book", "Book"
+        REPO = "repo", "Repository"
+        EXERCISE = "exercise", "Exercise"
+        OTHER = "other", "Other"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     node = models.ForeignKey(
@@ -132,6 +157,8 @@ class RoadmapResource(models.Model):
     )
     label = models.CharField(max_length=120)
     url = models.URLField()
+    kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.OTHER)
+    notes = models.TextField(blank=True, default="")
     position = models.PositiveIntegerField(default=0)
     archived_at = models.DateTimeField(null=True, blank=True)
 

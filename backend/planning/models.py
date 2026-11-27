@@ -195,6 +195,32 @@ class Task(models.Model):
         on_delete=models.RESTRICT,
         related_name="tasks",
     )
+    # Where the task sits in the chain. A task belongs to at most one project,
+    # so independent project workspaces never share work.
+    goal = models.ForeignKey(
+        "growth.Goal",
+        null=True,
+        blank=True,
+        on_delete=models.RESTRICT,
+        related_name="tasks",
+    )
+    milestone = models.ForeignKey(
+        "growth.Milestone",
+        null=True,
+        blank=True,
+        on_delete=models.RESTRICT,
+        related_name="tasks",
+    )
+    project = models.ForeignKey(
+        "growth.Project",
+        null=True,
+        blank=True,
+        on_delete=models.RESTRICT,
+        related_name="tasks",
+    )
+    # Subtasks as a simple checklist: [{"id", "text", "done"}], at most 50.
+    checklist = models.JSONField(default=list, blank=True)
+    notes = models.TextField(blank=True, default="")
     priority = models.PositiveSmallIntegerField(default=0)
     estimated_minutes = models.PositiveIntegerField(null=True, blank=True)
     # Optional. Changes are recorded as due_changed PlanningEvents so a past

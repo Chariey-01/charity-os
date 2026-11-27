@@ -10,6 +10,7 @@ class Challenge(models.Model):
     class Status(models.TextChoices):
         DRAFT = "draft", "Draft"
         ACTIVE = "active", "Active"
+        PAUSED = "paused", "Paused"
         COMPLETED = "completed", "Completed"
         CANCELLED = "cancelled", "Cancelled"
 
@@ -52,7 +53,7 @@ class Challenge(models.Model):
             ),
             models.CheckConstraint(
                 condition=models.Q(
-                    status__in=("draft", "active", "completed", "cancelled")
+                    status__in=("draft", "active", "paused", "completed", "cancelled")
                 ),
                 name="challenges_challenge_status_valid",
             ),

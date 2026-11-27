@@ -34,6 +34,7 @@ INSTALLED_APPS = [
     "reflections",
     "health",
     "scheduling",
+    "growth",
 ]
 MIDDLEWARE = [
     # First: answers the platform health probe before host and HTTPS checks.
