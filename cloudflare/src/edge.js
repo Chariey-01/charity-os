@@ -153,11 +153,37 @@ function unavailable() {
   );
 }
 
+/**
+ * Digital Asset Links for the Android app (a Trusted Web Activity built with
+ * Bubblewrap, docs/android-app.md). Android checks this file to confirm the
+ * app and the site belong together; then the app opens without a browser bar.
+ * The certificate fingerprint is public by design.
+ */
+export function assetLinks(env) {
+  const packageName = env.ANDROID_PACKAGE || "";
+  const fingerprints = String(env.ANDROID_CERT_SHA256 || "")
+    .split(",")
+    .map((value) => value.trim().toUpperCase())
+    .filter((value) => /^([0-9A-F]{2}:){31}[0-9A-F]{2}$/.test(value));
+  if (!packageName || !fingerprints.length) return [];
+  return [
+    {
+      relation: ["delegate_permission/common.handle_all_urls"],
+      target: { namespace: "android_app", package_name: packageName, sha256_cert_fingerprints: fingerprints },
+    },
+  ];
+}
+
 export async function handleRequest(request, env) {
   const url = new URL(request.url);
   if (url.protocol === "http:" && !LOCAL_HOSTS.has(url.hostname)) {
     url.protocol = "https:";
     return Response.redirect(url.toString(), 301);
+  }
+  if (url.pathname === "/.well-known/assetlinks.json") {
+    return Response.json(assetLinks(env), {
+      headers: { "Cache-Control": "public, max-age=3600", "X-Content-Type-Options": "nosniff" },
+    });
   }
   if (isProxied(url.pathname)) {
     let upstream;

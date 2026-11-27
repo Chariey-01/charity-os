@@ -71,3 +71,23 @@ describe("scheduled reminders", () => {
     assert.equal((await pending[0]).reason, "not_configured");
   });
 });
+
+describe("Android asset links", async () => {
+  const { assetLinks, handleRequest } = await import("../src/edge.js");
+  const FP = "EA:17:55:77:32:CC:A0:4B:15:DD:0A:AC:FF:AE:C9:EA:F7:DD:61:0F:F9:0F:3B:0D:FD:76:54:3D:73:D6:AD:0C";
+
+  it("serves the package and fingerprint for Trusted Web Activity verification", async () => {
+    const env = { ...BASE, ANDROID_PACKAGE: "dev.workers.charity_jk.charityos.twa", ANDROID_CERT_SHA256: FP };
+    const response = await handleRequest(new Request("https://charityos.example.workers.dev/.well-known/assetlinks.json"), env);
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body[0].target.package_name, "dev.workers.charity_jk.charityos.twa");
+    assert.deepEqual(body[0].target.sha256_cert_fingerprints, [FP]);
+    assert.deepEqual(body[0].relation, ["delegate_permission/common.handle_all_urls"]);
+  });
+
+  it("serves an empty list when unconfigured or malformed", () => {
+    assert.deepEqual(assetLinks({}), []);
+    assert.deepEqual(assetLinks({ ANDROID_PACKAGE: "x", ANDROID_CERT_SHA256: "not-a-fingerprint" }), []);
+  });
+});
