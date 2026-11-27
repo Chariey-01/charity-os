@@ -1,6 +1,23 @@
-# CharityOS v0.1
+# CharityOS
 
-CharityOS is a private, mobile-first personal scheduler and life tracker. It connects a time-based schedule for any activity (study, errands, exercise, sleep, appointments) with daily plans, authoritative focus time, learning roadmaps, evidence, reflection, and wellbeing. Challenges such as Road to 2027 are dated containers inside it. It intentionally has no composite productivity score.
+**A personal operating system: vision → goals → milestones → roadmaps and projects → tasks → schedule → focus → evidence → My Journey → insights.**
+
+| Area | Where in the app | Docs |
+|---|---|---|
+| My Vision (aspirations, manifestations, who I am becoming; revisions kept; realised only with evidence or confirmation) | Plan → My Vision | |
+| Goals and milestones (measurable or milestone-based, check-ins, overdue/at-risk, history, carry-forward) | Plan → Goals | |
+| Roadmaps (stages, criteria, resources, notes; AI Engineering template; pause/resume) | Plan → Roadmaps | [personal-roadmaps.md](docs/personal-roadmaps.md) |
+| Projects (separate workspaces, board, milestones, notes, activity) | Plan → Projects | |
+| Challenges (30/90/96/365/custom; pause, resume, complete) | Plan → Challenges | |
+| Tasks, backlog, checklists, schedule, focus, daily plan (max three primary outcomes) | Today, Tasks, Schedule | [scheduler-design.md](docs/scheduler-design.md) |
+| My Journey (calendar-year chapters, permanent dated record, journal, year-end review) | Me → My Journey | |
+| Insights (this week, direction, trends over 7 days to all time) | Me → Insights | |
+| Phone reminders (Web Push), snooze, Google Calendar feed | Me → Reminders and calendar | [reminders-and-notifications.md](docs/reminders-and-notifications.md) |
+| Private beta: invite sign-up, reset links, feedback, accountability partners | Me → Beta admin / Accountability | [private-beta.md](docs/private-beta.md) |
+| Android: installable PWA and a signed TWA APK | | [android-app.md](docs/android-app.md) |
+| Deployment ($0: Cloudflare Worker + Vercel + Neon) | | [cloudflare-deployment.md](docs/operations/cloudflare-deployment.md) |
+
+CharityOS began as a private, mobile-first personal scheduler and life tracker. It connects a time-based schedule for any activity (study, errands, exercise, sleep, appointments) with daily plans, authoritative focus time, learning roadmaps, evidence, reflection, and wellbeing. Challenges such as Road to 2027 are dated containers inside it. It intentionally has no composite productivity score.
 
 ## Architecture and features
 
