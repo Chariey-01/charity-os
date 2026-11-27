@@ -352,6 +352,11 @@ function GoalDetail({ id }: { id: string }) {
         <button type="button" className="button small secondary" onClick={() => setSheet("edit")}>
           <Icon name="edit" size={18} /> Edit
         </button>
+        {goal.status === "active" && (
+          <a className="button small secondary" href={`#/reminders?new=1&kind=goal&target=${goal.id}&title=${encodeURIComponent(`Check in on: ${goal.title}`)}&link=${encodeURIComponent(`#/goals/${goal.id}`)}`}>
+            <Icon name="bell" size={18} /> Remind me
+          </a>
+        )}
         {goal.status !== "released" && goal.status !== "completed" && (
           <button type="button" className="button small secondary" onClick={() => setSheet("release")}>
             Let go

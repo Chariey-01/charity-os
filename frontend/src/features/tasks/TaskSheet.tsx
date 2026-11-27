@@ -574,6 +574,15 @@ function TaskActions({
         {task.description && <p className="task-notes">{task.description}</p>}
         {task.roadmap_item && <p className="hint">Linked to a roadmap item.</p>}
         <TaskLinks task={task} />
+        {!archived && open && (
+          <a
+            className="chip small"
+            href={`#/reminders?new=1&kind=task&target=${task.id}&title=${encodeURIComponent(task.title)}&link=${encodeURIComponent("#/tasks")}`}
+            onClick={onClose}
+          >
+            <Icon name="bell" size={16} /> Remind me
+          </a>
+        )}
       </div>
       <Checklist task={task} onChange={onChange} />
 
