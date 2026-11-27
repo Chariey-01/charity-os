@@ -86,7 +86,7 @@ print(json.dumps({
     "debug": settings.DEBUG,
     "db": [db["NAME"], db["USER"], db["HOST"], db["PORT"], db["OPTIONS"]],
     "conn": [db["CONN_MAX_AGE"], db["CONN_HEALTH_CHECKS"]],
-    "middleware": settings.MIDDLEWARE[:3],
+    "middleware": settings.MIDDLEWARE[:4],
     "root": str(settings.WHITENOISE_ROOT),
     "cookies": [settings.SESSION_COOKIE_SECURE, settings.CSRF_COOKIE_SECURE],
     "redirect": settings.SECURE_SSL_REDIRECT,
@@ -131,6 +131,7 @@ def test_production_settings_use_the_platform_database_and_serve_the_pwa():
     assert loaded["conn"] == [60, True]
     assert loaded["middleware"] == [
         "config.health_probe.HealthProbeMiddleware",
+        "config.edge_proxy.EdgeProxyMiddleware",  # off: no secret is set
         "django.middleware.security.SecurityMiddleware",
         "whitenoise.middleware.WhiteNoiseMiddleware",
     ]
@@ -182,10 +183,12 @@ def built_frontend(tmp_path):
 
 @pytest.fixture
 def pwa_client(settings, built_frontend, tmp_path):
+    # Straight after SecurityMiddleware, as production.py places it.
+    after = settings.MIDDLEWARE.index("django.middleware.security.SecurityMiddleware")
     settings.MIDDLEWARE = [
-        *settings.MIDDLEWARE[:2],
+        *settings.MIDDLEWARE[: after + 1],
         "whitenoise.middleware.WhiteNoiseMiddleware",
-        *settings.MIDDLEWARE[2:],
+        *settings.MIDDLEWARE[after + 1 :],
     ]
     settings.WHITENOISE_ROOT = built_frontend
     settings.WHITENOISE_INDEX_FILE = True
