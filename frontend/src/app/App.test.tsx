@@ -45,12 +45,12 @@ test("shows an offline state instead of the login form when the server is unreac
   expect(screen.queryByRole("button", { name: "Sign in" })).not.toBeInTheDocument();
 });
 
-test("mobile navigation exposes the six primary sections", async () => {
+test("mobile navigation exposes the five primary sections", async () => {
   mockApi({ "/schedule/day": day([entry()]) });
   render(<App />);
   const nav = await screen.findByRole("navigation", { name: "Primary" });
   const links = within(nav).getAllByRole("link");
-  expect(links.map((link) => link.textContent)).toEqual(["Today", "Tasks", "Schedule", "Roadmaps", "Insights", "Profile"]);
+  expect(links.map((link) => link.textContent)).toEqual(["Today", "Tasks", "Schedule", "Plan", "Me"]);
   expect(within(nav).getByRole("link", { name: "Today" })).toHaveAttribute("aria-current", "page");
 
   fireEvent.click(within(nav).getByRole("link", { name: "Schedule" }));
@@ -92,7 +92,7 @@ test("renders nested roadmap and next actions", async () => {
     "/roadmaps/r1/tree": { roadmap, nodes: [item] },
   });
   render(<App />);
-  expect(await screen.findByRole("heading", { name: "Your long-lived paths." })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "Your learning paths" })).toBeInTheDocument();
   expect((await screen.findAllByText("Union types")).length).toBeGreaterThan(0);
   fireEvent.click(screen.getAllByRole("button", { name: /TypeScript/ }).at(-1)!);
   expect((await screen.findAllByText("Build typed apps")).length).toBeGreaterThan(0);
