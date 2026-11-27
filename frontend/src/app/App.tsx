@@ -2,7 +2,9 @@ import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState
 
 import { Icon } from "../components/ui";
 import { FocusBar } from "../features/focus/FocusBar";
+import { PrivacyPage, ResetPage, SignupPage } from "../features/account/AccountPages";
 import { ChallengesScreen } from "../features/challenges/ChallengesScreen";
+import { AccountScreen, BetaAdminScreen, FeedbackScreen, PartnersScreen } from "../features/community/CommunityScreens";
 import { GoalsScreen } from "../features/goals/GoalsScreen";
 import { InsightsScreen } from "../features/insights/InsightsScreen";
 import { JourneyScreen } from "../features/journey/JourneyScreen";
@@ -92,12 +94,19 @@ function Login({ onLogin, notice }: { onLogin: (user: User) => void; notice?: st
           {error && <p className="form-error" role="alert">{error}</p>}
           <button className="button block" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
         </form>
+        <p className="auth-links">
+          <a href="#/signup">Have an invite? Create your account</a>
+          <span aria-hidden="true"> · </span>
+          <a href="#/privacy">Privacy</a>
+        </p>
+        <p className="hint">Forgot your password? Ask the person who invited you for a reset link.</p>
       </section>
     </main>
   );
 }
 
 export function App() {
+  const route = useHashRoute();
   const [user, setUser] = useState<User | null | undefined>(undefined);
   const [bootError, setBootError] = useState("");
   const [notice, setNotice] = useState("");
@@ -147,6 +156,10 @@ export function App() {
     );
   }
   if (user === undefined) return <main className="loading" role="status">Loading CharityOS…</main>;
+  if (!user && route.path[0] === "signup")
+    return <SignupPage code={route.params.get("code") ?? ""} onSignedUp={(value) => (setNotice(""), setUser(value))} />;
+  if (!user && route.path[0] === "reset") return <ResetPage uid={route.params.get("uid") ?? ""} token={route.params.get("token") ?? ""} />;
+  if (!user && route.path[0] === "privacy") return <PrivacyPage />;
   if (!user) {
     return (
       <Login
@@ -288,6 +301,10 @@ function Shell({ user, setUser }: { user: User; setUser: (user: User | null) => 
     insights: () => <InsightsScreen route={route} />,
     profile: () => <ProfileScreen route={route} />,
     reminders: () => <RemindersScreen route={route} />,
+    partners: () => <PartnersScreen route={route} />,
+    feedback: () => <FeedbackScreen />,
+    beta: () => <BetaAdminScreen />,
+    account: () => <AccountScreen />,
   };
   const screen = (screens[screenName] ?? (() => <TodayScreen key={prefs.default_today_view} />))();
 

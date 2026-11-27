@@ -20,6 +20,8 @@ const SECTION_TAB: Record<string, Tab> = {
   partners: "me",
   feedback: "me",
   reminders: "me",
+  beta: "me",
+  account: "me",
 };
 
 export const SCREENS = ["today", "tasks", "schedule", ...Object.keys(SECTION_TAB)] as const;
