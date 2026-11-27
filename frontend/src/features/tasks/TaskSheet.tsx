@@ -142,7 +142,13 @@ function TaskForm({
           Object.fromEntries(Object.entries(err.fields).map(([key, value]) => [key, Array.isArray(value) ? value[0] : String(value)])),
         );
       }
-      setError(err instanceof Error ? err.message : "Could not save the task");
+      setError(
+        err instanceof ApiError && err.code === "idempotency_key_reused"
+          ? "This task may already have been saved before the connection dropped. Close this form and check your list before adding it again."
+          : err instanceof Error
+            ? err.message
+            : "Could not save the task",
+      );
     } finally {
       setBusy(false);
     }

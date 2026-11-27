@@ -215,3 +215,16 @@ test("starting focus on a task that is scheduled today starts that activity", as
   expect(api.writes()[0].body).toMatchObject({ expected_version: 3 });
   expect(typeof api.writes()[0].body!.session_id).toBe("string");
 });
+
+test("a create whose first answer was lost, then edited, explains itself instead of showing a raw key error", async () => {
+  const reused = { detail: "x", error: { code: "idempotency_key_reused", message: "This Idempotency-Key was already used for a different request." } };
+  mockApi({ "/tasks": tasksRoute([]), "POST /tasks": json(reused, 422) });
+  await openTasksTab();
+  fireEvent.click(await screen.findByRole("button", { name: "Add a task" }));
+  const sheet = await screen.findByRole("dialog", { name: "New task" });
+  fireEvent.change(within(sheet).getByLabelText("Title"), { target: { value: "Pay rent" } });
+  fireEvent.click(within(sheet).getByRole("button", { name: "Add task" }));
+
+  expect(await within(sheet).findByText(/may already have been saved/)).toBeInTheDocument();
+  expect(within(sheet).queryByText(/Idempotency-Key/)).not.toBeInTheDocument();
+});
