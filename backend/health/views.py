@@ -1,17 +1,14 @@
-from django.db import connection
-from django.db.utils import DatabaseError
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
+from config.health_probe import health_body
 
+
+# GET and HEAD are answered by config.health_probe.HealthProbeMiddleware before
+# they reach this view; it remains for the URL name and the other methods (405).
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def health(request):
-    try:
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT 1")
-            cursor.fetchone()
-    except DatabaseError:
-        return Response({"status": "unhealthy", "database": "unavailable"}, status=503)
-    return Response({"status": "ok", "database": "ok"})
+    body, status = health_body()
+    return Response(body, status=status)

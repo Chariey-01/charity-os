@@ -36,6 +36,8 @@ INSTALLED_APPS = [
     "scheduling",
 ]
 MIDDLEWARE = [
+    # First: answers the platform health probe before host and HTTPS checks.
+    "config.health_probe.HealthProbeMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
