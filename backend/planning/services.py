@@ -144,6 +144,17 @@ def transition_task(*, user, task, target, reason=""):
     task.cancelled_at = now if target == Task.Status.CANCELLED else None
     task.save(update_fields=("status", "completed_at", "cancelled_at", "updated_at"))
     snapshot = {"title": task.title, "from": previous, "to": target}
+    if target == Task.Status.DONE:
+        # TD-1: fix the attribution at completion time (planning/progress.py).
+        snapshot["area"] = (
+            {"id": str(task.area_id), "label": task.area.name, "color": task.area.color}
+            if task.area_id
+            else None
+        )
+        if task.project_id:
+            snapshot["project"] = {"id": str(task.project_id), "name": task.project.name}
+        if task.goal_id:
+            snapshot["goal"] = {"id": str(task.goal_id), "title": task.goal.title}
     if reason.strip():
         snapshot["reason"] = reason.strip()
     PlanningEvent.objects.create(
