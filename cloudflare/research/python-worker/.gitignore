@@ -1,0 +1,9 @@
+# Copies made by sync-backend.sh, and pywrangler's working files.
+src/*/
+.venv/
+.venv-workers/
+python_modules/
+pylock.toml
+uv.lock
+.dev.vars
+.wrangler/

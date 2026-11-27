@@ -1,0 +1,8 @@
+name = "charityos-probe"
+main = "src/entry.py"
+compatibility_date = "2026-11-27"
+compatibility_flags = ["python_workers"]
+
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "00000000000000000000000000000000"
