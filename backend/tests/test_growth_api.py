@@ -323,3 +323,24 @@ def test_erase_user_removes_growth_records(user, other, client):
     assert not Goal.objects.exists() and not Milestone.objects.exists()
     assert not Task.objects.filter(user_id=user.pk).exists()
     assert get_user_model().objects.filter(pk=other.pk).exists()
+
+
+def test_direction_insights_show_movement_and_what_keeps_slipping(client, user):
+    goal = client.post(f"{API}/goals", {"title": "Ship portfolio"}, format="json").data
+    client.post(f"{API}/milestones", {"goal": goal["id"], "title": "Case study"}, format="json")
+    task = client.post(
+        f"{API}/tasks", {"title": "Write case study", "due_date": "2026-11-20"}, format="json"
+    ).data
+    for later in ("2026-11-22", "2026-11-25", "2026-11-28"):
+        client.patch(f"{API}/tasks/{task['id']}", {"due_date": later}, format="json")
+    client.patch(f"{API}/tasks/{task['id']}", {"due_date": "2026-11-21"}, format="json")  # earlier: not a postponement
+    data = client.get(f"{API}/insights/direction").data
+    assert [g["title"] for g in data["goals"]] == ["Ship portfolio"]
+    assert data["goals"][0]["ratio"] == 0.0 and data["goals"][0]["basis"] == "milestones"
+    assert data["postponed"] == [
+        {"id": task["id"], "title": "Write case study", "times": 3, "status": "todo"}
+    ]
+
+
+def test_insights_accept_six_months(client):
+    assert client.get(f"{API}/insights?period=180d").status_code == 200

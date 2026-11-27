@@ -183,7 +183,7 @@ function Timeline({ entries, months }: { entries: JourneyEntry[]; months: Journe
               <h3>{monthLabel(key)}</h3>
               {month && (
                 <small>
-                  {month.tasks_completed} tasks done · {formatMinutes(month.focus_minutes)} focused
+                  {month.tasks_completed} {month.tasks_completed === 1 ? "task" : "tasks"} done · {formatMinutes(month.focus_minutes)} focused
                   {month.top_areas.length > 0 && ` · mostly ${month.top_areas.map(([name]) => name).join(", ")}`}
                 </small>
               )}

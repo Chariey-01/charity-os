@@ -62,6 +62,7 @@ urlpatterns = [
     path("areas/ensure-workstreams", schedule_views.ensure_workstreams_view),
     path("progress", views.progress_view),
     path("journey", growth_views.journey_view),
+    path("insights/direction", growth_views.direction_view),
     path("journey/year-end", growth_views.year_end_view),
     path("roadmap-templates", growth_views.roadmap_templates),
     path("roadmaps/from-template", growth_views.roadmap_from_template),
