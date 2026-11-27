@@ -114,7 +114,7 @@ The earlier claims (540 / 95 / 17) were reproduced and superseded by these resul
 
 ## 12. Pull request
 
-Opened from `feature/daily-operations` against `main`: see the PR link recorded in the pull request itself and in the commit that adds it to this report. It has not been merged.
+**https://github.com/Chariey-01/charity-os/pull/5**, "feat: complete daily operations and weekly progress tracking", from `feature/daily-operations` against `main`. It is open and **not merged**; its description states the CI blocker and the reviewed SHA.
 
 ## 13. GitHub CI status [Blocked]
 
