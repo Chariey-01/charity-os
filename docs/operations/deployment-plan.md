@@ -6,6 +6,8 @@
 - the deployment itself;
 - any migration of the personal `charityos` database.
 
+A $0 alternative was prepared afterwards on `feature/cloudflare-deploy`: Cloudflare serves the PWA and forwards the API to Django on Vercel Hobby, with PostgreSQL on Neon Free. It was proven locally, not deployed; see the [Cloudflare deployment guide](cloudflare-deployment.md). The requirements below apply to both layouts, except that there the Worker, not Django, serves the files in section 1.
+
 This plan lists what the code on `integration/phase-0` needs. Related guides:
 - [reverse proxy](reverse-proxy.md)
 - [backup and restore](backup-and-restore.md)
