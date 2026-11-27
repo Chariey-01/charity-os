@@ -1,7 +1,7 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
-from . import growth_views, notification_views, schedule_views, views
+from . import community_views, growth_views, notification_views, schedule_views, views
 
 router = DefaultRouter(trailing_slash=False)
 for prefix, view in (
@@ -36,6 +36,24 @@ urlpatterns = [
     path("auth/login", views.login_view),
     path("auth/logout", views.logout_view),
     path("me", views.me),
+    path("auth/signup", community_views.signup),
+    path("auth/signup-status", community_views.signup_status),
+    path("auth/password/reset", community_views.password_reset_confirm),
+    path("auth/password", community_views.change_password),
+    path("beta/invites", community_views.beta_invites),
+    path("beta/invites/<uuid:pk>/revoke", community_views.beta_invite_revoke),
+    path("beta/users", community_views.beta_users),
+    path("beta/users/<uuid:pk>/reset-link", community_views.beta_reset_link),
+    path("beta/feedback", community_views.beta_feedback),
+    path("beta/feedback/<uuid:pk>/status", community_views.beta_feedback_status),
+    path("feedback", community_views.feedback),
+    path("partners", community_views.partners),
+    path("partners/<uuid:pk>", community_views.partner_update),
+    path("partners/<uuid:pk>/accept", community_views.partner_accept),
+    path("partners/<uuid:pk>/decline", community_views.partner_decline),
+    path("partners/<uuid:pk>/end", community_views.partner_end),
+    path("partners/<uuid:pk>/view", community_views.partner_view),
+    path("partners/<uuid:pk>/cheer", community_views.partner_cheer),
     path("analytics/metrics", views.metrics),
     path("schedule/day", schedule_views.schedule_day),
     path("insights", schedule_views.insights),

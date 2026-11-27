@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     "scheduling",
     "growth",
     "notifications",
+    "community",
 ]
 MIDDLEWARE = [
     # First: answers the platform health probe before host and HTTPS checks.
@@ -213,3 +214,11 @@ CHARITYOS_VAPID_SUBJECT = os.environ.get(
 # Shared with the scheduler (Cloudflare cron trigger) that calls
 # POST /api/v1/internal/reminders/dispatch. At least 32 characters.
 CHARITYOS_CRON_SECRET = os.environ.get("CHARITYOS_CRON_SECRET", "")
+
+# Private beta (community app): "invite" lets people with a beta invite code
+# create an account; "closed" turns sign-up off entirely.
+CHARITYOS_SIGNUP_MODE = os.environ.get("CHARITYOS_SIGNUP_MODE", "invite")
+if CHARITYOS_SIGNUP_MODE not in ("invite", "closed"):
+    CHARITYOS_SIGNUP_MODE = "closed"
+# Reset links made by the beta admin are valid for one day.
+PASSWORD_RESET_TIMEOUT = 60 * 60 * 24

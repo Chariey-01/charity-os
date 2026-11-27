@@ -114,6 +114,7 @@ def login_view(request):
             "email": user.email,
             "display_name": user.display_name,
             "timezone": user.timezone,
+            "is_beta_admin": user.is_staff,
         }
     )
 
@@ -138,6 +139,7 @@ def me(request):
             "email": request.user.email,
             "display_name": request.user.display_name,
             "timezone": request.user.timezone,
+            "is_beta_admin": request.user.is_staff,
         }
     )
 
