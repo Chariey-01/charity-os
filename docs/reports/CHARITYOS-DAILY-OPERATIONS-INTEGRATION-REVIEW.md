@@ -1,5 +1,159 @@
 # CharityOS — daily operations: integration review and pull request
 
+## PR #5 final CI verification and integration readiness (27 Nov 2026, ~07:00 EAT)
+
+**Verdict: NOT READY — EXTERNAL BLOCKER.**
+- **GitHub Actions still refuses to start any job** because the account is locked for a billing issue. Neither CI job has run on the PR head, so neither has passed.
+- Everything that can be checked here is clean:
+  - **The restore drill now passes.** It was blocked in the previous session.
+  - **The backend and frontend CI jobs pass locally** on the exact head.
+  - **Migration verification is clean.**
+  - **No release-blocking defect is known.**
+
+Legend: **[Verified]** verified and passing · **[Failed]** · **[Blocked]** blocked by external action · **[Not independently verified]**. Where the CI investigation below differs from this section (C5 drill, C9 audit, C10 actions), this section supersedes it.
+
+### F1. Current state [Verified]
+
+| Item | Value |
+|---|---|
+| PR #5 | Open, not merged, not a draft. Mergeable state `unstable` (failing checks). |
+| Base | `main` at `e17a153791aab356944e57f298223caab87404ed` |
+| PR head validated here | `4bfb9daa6d2cf3dbfa07907e24f088acc4dac067`. There are no commits after it, and local and remote are equal. |
+| Working tree | Clean apart from the untracked `frontend/node_modules` symlink. No other session is active. |
+| Application code at the head | The `backend/`, `frontend/`, `ops/` and `.github/` trees are **byte-identical** to `b368836`, where the last browser run and migration check ran (`02ff9d2`, `9051398`, `ba6ae01`, `3da01af`). The only file changed since the reviewed code `5895f95` is this report. |
+| Commit adding this section | Documentation only, parent `4bfb9da`. Its own CI runs are refused for the same reason while the lock lasts. No addendum commit was added for them: check with `gh pr checks 5`. |
+
+### F2. GitHub Actions [Blocked]
+
+The pull-request run on the head was re-run at **03:49:01Z (06:49 EAT)** to test whether billing had been fixed. It had not.
+
+| Run | Event, attempt | Job (ID) | Ran? | Steps | Runner | Result |
+|---|---|---|---|---|---|---|
+| [45929406085](https://github.com/Chariey-01/charity-os/actions/runs/45929406085) | `pull_request`, attempt 2 (03:49Z) | backend (140300325887) | **No** | 0 | none | failure |
+| 45929406085 | `pull_request`, attempt 2 | frontend (140300326151) | **No** | 0 | none | failure |
+| 45929404048 | `push`, attempt 1 (02:37Z) | backend (140278269742), frontend (140278269479) | **No** | 0, 0 | none | failure |
+
+**Exact blocking message,** the annotation on every job: *"The job was not started because your account is locked due to a billing issue."*
+- **Backend CI:** [Blocked]. It did not execute.
+- **Frontend CI:** [Blocked]. It did not execute.
+- No job has ever been queued and then skipped, cancelled or passed on this PR.
+- There are no logs to inspect for warnings, because no step ran.
+- The CI part of the task stopped here. Nothing was bypassed and no billing or repository setting was changed.
+
+### F3. Restore drill [Verified]
+
+Command, run from a fresh clone at `4bfb9da` (tree `79c4100`) with the pinned Python environment: `ops/db/restore-drill.sh --migrate`. Result: **`DRILL PASSED`, exit 0** (03:50:49–03:51:25Z).
+
+| Check | Result |
+|---|---|
+| Backup creation | A read-only `pg_dump` of the approved source `charityos_acceptance` into `~/charityos-backups/charityos_acceptance/20261127T035050Z_drill` (`--no-prune`: no earlier backup touched) |
+| Backup integrity | Re-checked independently from disk: all 6 files `OK` against `SHA256SUMS`. The dump's sha256 `65d5f5ec…0e04` equals the manifest. 35 tables, 499 rows, format 1, pg_dump and server 16.15. |
+| Restore target | A new `charityos_restore_drill_20261127t035049z_8fdf59`, labelled with a random owner token |
+| After restoring | Row counts (35 tables, 499 rows), **every row of every table** by content fingerprint, schema summary (35 tables, 137 indexes, 8 sequences, 173 constraints), applied migrations (34) and `manage.py check`: all `OK` |
+| Records and relationships | Every row is fingerprint-identical. `pg_restore` recreates all 173 constraints in its single transaction, which validates every foreign key. |
+| Migration state | Forward through the 26 newer migrations, including `planning.0011`: all 32 data tables keep their row counts. Back to the backup's 34 migrations: the table list is equal and **every row is identical**. Forward again: counts kept. |
+| Source unchanged | A read-only snapshot of `charityos_acceptance` before and after (OID 28660, row counts, every table's fingerprint, schema summary, migrations): **identical**. The backup's counts and fingerprints equal the live source. |
+| Clean-up | The drill dropped only its own database, after proving it created it (name prefix plus token). This follows the owner's standing rule that the drill may create and drop only its own `charityos_restore_drill_*` databases. The protected `charityos_restore_drill_ae_20261126t075039z` was untouched. |
+| All databases | Names and OIDs identical before and after this session, `charityos` included |
+
+The acceptance data predates `planning.0011` and holds no due dates, so the drill's backward step passes through `0011`'s guard without triggering it. The guard's refusal path is verified in C8 and by the tests.
+
+### F4. Local revalidation on `4bfb9da` [Verified]
+
+Run from a fresh clone at the head, with a fresh `npm ci`, the pinned Python 3.12 environment, Node 24.14.0 and PostgreSQL 16.15, in `TZ=UTC`, using the workflow's own commands.
+
+| Job | Command | Result | Exit |
+|---|---|---|---|
+| backend | `ruff check .` | `All checks passed!` | 0 |
+| backend | `ruff format --check .` | `136 files already formatted` | 0 |
+| backend | `python manage.py check` | `no issues (1 silenced)` | 0 |
+| backend | `python manage.py makemigrations --check --dry-run` | `No changes detected` (see note) | 0 |
+| backend | `pytest -rs` | **`545 passed`**, 0 skipped, 188 s | 0 |
+| backend | `check --deploy` (production settings with throwaway values) | `no issues (1 silenced)` | 0 |
+| frontend | `npm ci` | installed (audit findings in F8) | 0 |
+| frontend | `npm run lint` / `npm run typecheck` | clean / clean | 0 / 0 |
+| frontend | `npm test` | **`98 passed`** (16 files) | 0 |
+| frontend | `npm run build` | `✓ built` | 0 |
+
+**Backup and restore tests** are inside the 545: `test_ops_backup` 14, `test_ops_restore` 13 and `test_ops_migrate` 8.
+
+**Note: one deviation from `ci.yml`.** To avoid creating any database outside the test runner and the drill, `check` and `makemigrations` pointed at a database name that doesn't exist. So `makemigrations` warned that it skipped the history-consistency check, and the standalone `migrate --noinput` step was not repeated. Both are covered elsewhere:
+- pytest migrated its own test database from zero (60 migrations) and destroyed it.
+- The drill migrated real-shaped data forward, back and forward again.
+- The full `ci.yml` sequence, that step included, passed on the identical code at `b368836` (C3).
+
+### F5. Browser workflow [Verified], by identical code, not re-executed
+
+The 17-point walkthrough passed 17/17 on `b368836` (C6), with 0 console errors and no server errors. It covered:
+- task capture, workstream assignment, scheduling, focus sessions and task completion;
+- weekly progress, the historical charts and weekly reviews;
+- offline launch and recovery, expired sessions, and 360, 390 and 430 px widths.
+
+It still holds for `4bfb9da` because every tree it exercises (`backend/`, `frontend/`, `ops/`) is byte-identical (F1). It was **not run again** on this head.
+
+### F6. Migration verification [Verified]
+
+- **The independent `planning.0011` check passed 14/14** (C8, on the identical backend tree). Existing rows are byte-identical and get no invented due date. The reversal is refused while due dates exist and changes nothing. The round trip is exact.
+- **The drill migrated real-shaped data through `0011`** forward, back and forward again (F3).
+- **The tests passed:** `test_task_due_dates` (5) is inside the 545.
+- **The PR's only migration change** compared with `main` is `A backend/planning/migrations/0011_task_due_date.py`.
+
+### F7. Historical chart attribution: owner decision recorded
+
+- **Decision:** accepted temporarily for this release. The implementation in PR #5 is unchanged: no migration and no analytics change.
+- **Known technical debt, TD-1:**
+  - The completed-task distribution uses each task's **current** workstream. Reassigning a task after completion rewrites its past weeks' completed-task chart (confirmed in C8b).
+  - The time charts use the category recorded on the schedule entry or focus session, so they don't move.
+  - Retitling a task likewise changes the title shown in past weeks.
+- **Required before My Journey is implemented:** immutable workstream attribution recorded at completion, so that **no later task edit can rewrite historical analytics**.
+  - Acceptance test: complete a task, then reassign and retitle it in a later week. Every past week's progress, charts and accomplishments must stay unchanged.
+  - Design options are in C8b. The smallest needs no schema migration.
+
+### F8. Dependency audit: separate scope, not upgraded in PR #5 [Failed], not a required check
+
+`npm audit` on the head reports **12 vulnerable packages: 2 critical, 2 high, 8 moderate**. They come from 11 advisories. All are inherited from `main`: this PR changes neither `package.json` nor the lockfile. None reaches the browser bundle, **but each has impact on development or CI:**
+
+| Package (installed) | Advisory | Severity | Where it runs | Development and CI impact | Fix |
+|---|---|---|---|---|---|
+| `tinypool` 1.1.1, via `vitest` 3.2.7 | GHSA-5gmw-xhrv-c9v3, GHSA-85c8-ppgw-ccpr: a prototype-pollution gadget leading to remote code execution | critical | Every `npm test`, locally and in CI | Code execution on the owner's machine or a CI runner, if anything in the test process can pollute prototypes (for example a malicious dependency). The owner's machine holds the databases, backups and the backup encryption key, so this matters. CI has a read-only token and no secrets. | `vitest` 5 (**major**) |
+| `@vitest/mocker` 3.2.7 | GHSA-82fw-gwwq-j7x9 (file read via redirect mock), GHSA-qxg6-89mg-rqv8 (code injection via unauthenticated mock registration) | moderate | Test runs | Exposure is reduced because tests run `vitest run` with jsdom: no browser mode, API or UI server. The code is still installed and executed. | `vitest` 5 (**major**) |
+| `vite` 7.3.6 | GHSA-587h-7wmj-h5pm (high), GHSA-698v-4r3x-3vcv, GHSA-r825-w8mm-5pxw (`launch-editor` command execution); GHSA-rq7h-c2jc-7f22 (`server.fs.allow` bypass on Linux); GHSA-9jrq-w75r-8gcw (low, cross-origin middleware) | high | Developer dev server (`npm run dev`); `vite build` in CI | While the dev server runs, a malicious page or local client could read files outside the project, or trigger editor commands. CI only builds and starts no server. | `vite` ≥ 7.3.7 (non-major) |
+| `source-map-js` 1.2.1 | GHSA-68fv-2mgg-jv7q: event-loop denial of service from crafted source maps | high | Build, locally and in CI | A crafted source map in a dependency could hang the build. Inputs are the project's own code and its locked dependencies. | non-major |
+| `minimatch` (nested), via `typescript-eslint` 8.70.1 | GHSA-g3hv-75wg-m249: denial of service through glob amplification | moderate | Lint, locally and in CI | A crafted glob could stall lint. The globs come from the project's own ESLint config. | non-major |
+
+**Required follow-up:** a separate dependency and security PR once CI runs.
+1. `vitest` 3 → 5 first, which clears both criticals. It is a major upgrade and needs the full frontend suite.
+2. Then the non-major `vite`, `source-map-js` and `typescript-eslint`/`minimatch` updates.
+
+### F9. Remaining risks
+
+| Risk | Status |
+|---|---|
+| **GitHub has never executed this workflow.** Differences that exist only on the runner remain unproven: the runner image's PostgreSQL client tools for the backup tests, the exact `postgres:16-alpine` minor version, and the first-time action downloads. | [Blocked] until billing is fixed |
+| The browser walkthrough was not re-executed on `4bfb9da` (the code is byte-identical) | [Not independently verified] on this exact SHA |
+| TD-1: historical workstream attribution | Accepted for this release (F7) |
+| `npm audit`: 2 critical, 2 high, 8 moderate in development and CI tooling | Open, with a separate PR required (F8) |
+| The parked `feature/project-domain` migrations collide with `0009`–`0011` | Unchanged, deferred |
+
+### F10. Owner actions required
+
+1. **Clear the GitHub billing lock** for the account `Chariey-01` (Settings → Billing and plans): settle the failed payment or unpaid invoice, or update the payment method. Nothing else blocks CI.
+2. **Re-run both checks on the PR's latest commit:** Actions → the latest `pull_request` run → "Re-run all jobs", or push any commit. Confirm that `backend` and `frontend` show executed steps and finish green **on the head SHA**, with nothing queued or skipped.
+3. **Then review and merge PR #5 yourself.** Merging and deployment were not done here and stay your decisions.
+4. **Schedule TD-1** (F7) before My Journey.
+5. **Authorize the separate dependency and security PR** (F8) once CI works.
+
+**Evidence:** `~/charityos-qa-evidence/20261127_pr5-final-verification_4bfb9da/`. It holds the GitHub run, job and annotation data, both CI job logs, the drill output and report copy, backup-integrity checks, source before/after snapshots, database inventories, the deploy check and `npm-audit.json`. The drill report is also at `~/charityos-backups/drill-reports/20261127T035049Z_charityos_acceptance.txt`.
+
+**Boundaries kept:**
+- No merge, deployment, billing, branch-protection or repository-setting change.
+- No dependency upgrade and no analytics change.
+- No force-push or history rewrite.
+- `charityos` and the protected drill database were untouched.
+- The parked worktree was not modified.
+
+---
+
 ## PR #5 CI failure investigation (27 Nov 2026, ~05:50 EAT)
 
 **Result.**
